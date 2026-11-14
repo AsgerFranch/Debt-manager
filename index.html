@@ -1,0 +1,3429 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gældsoverblik — Personlig gældsstyring &amp; prognose</title>
+  <meta name="description" content="Dansk gældsoverblik med prognose, SU-lån i to faser, privatlån, hvad-nu-hvis-simulator og JSON-backup." />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    if (window.tailwind) {
+      window.tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+            },
+            colors: {
+              canvas: '#F9FAFB',
+              ink: '#111827',
+              muted: '#6B7280',
+              line: '#E5E7EB',
+              emeraldDeep: '#065F46',
+            },
+          },
+        },
+      };
+    }
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+
+  <style>
+    html, body {
+      background-color: #F9FAFB;
+      color: #111827;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
+    }
+
+    input[type="range"].scandi-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 6px;
+      background: #E5E7EB;
+      border-radius: 9999px;
+      outline: none;
+    }
+
+    input[type="range"].scandi-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 9999px;
+      background: #065F46;
+      border: 2px solid #FFFFFF;
+      box-shadow: 0 1px 3px rgba(17, 24, 39, 0.25);
+      cursor: pointer;
+      transition: transform 0.12s ease;
+    }
+
+    input[type="range"].scandi-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.08);
+    }
+
+    input[type="range"].scandi-slider::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 9999px;
+      background: #065F46;
+      border: 2px solid #FFFFFF;
+      box-shadow: 0 1px 3px rgba(17, 24, 39, 0.25);
+      cursor: pointer;
+    }
+
+    .modal-backdrop {
+      background-color: rgba(17, 24, 39, 0.42);
+      backdrop-filter: blur(2px);
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-[#F9FAFB] text-[#111827]">
+
+  <!-- Authentication & Session Gate (skjuler al data indtil login + server-synk er bekræftet) -->
+  <div id="authGate" class="min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-white border border-[#E5E7EB] rounded-2xl shadow-sm p-6 sm:p-8 space-y-6">
+      <div class="text-center space-y-2">
+        <div class="mx-auto w-11 h-11 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] flex items-center justify-center text-[#065F46]">
+          <i data-lucide="shield-check" class="w-5 h-5"></i>
+        </div>
+        <h1 class="text-2xl font-semibold tracking-tight text-[#111827]">Gældsoverblik</h1>
+        <p class="text-sm text-[#6B7280]">Log ind for at hente og gemme dine lån sikkert i Firestore</p>
+      </div>
+
+      <div id="authLoadingView" class="py-6 text-center space-y-3">
+        <div class="mx-auto w-7 h-7 border-2 border-[#E5E7EB] border-t-[#065F46] rounded-full animate-spin"></div>
+        <p class="text-sm text-[#6B7280]">Kontrollerer login-status…</p>
+      </div>
+
+      <div id="authFormView" class="hidden space-y-5">
+        <div id="fileProtocolWarning" class="hidden text-xs text-[#B45309] bg-[#FFFBEB] border border-[#FDE68A] rounded-xl px-3.5 py-2.5 leading-relaxed">
+          Bemærk: Firebase-login kræver at siden åbnes via <code class="font-mono">http://</code> eller <code class="font-mono">https://</code> (f.eks. localhost, GitHub Pages eller Firebase Hosting) — ikke direkte som <code class="font-mono">file://</code>.
+        </div>
+
+        <div class="grid grid-cols-2 gap-1.5 p-1 bg-[#F3F4F6] rounded-xl" role="tablist" aria-label="Vælg login eller opret konto">
+          <button type="button" id="authTabSignIn" class="py-2 px-3 rounded-lg text-sm font-medium transition bg-white text-[#111827] shadow-sm">
+            Log ind
+          </button>
+          <button type="button" id="authTabSignUp" class="py-2 px-3 rounded-lg text-sm font-medium transition text-[#6B7280] hover:text-[#111827]">
+            Opret konto
+          </button>
+        </div>
+
+        <form id="authForm" class="space-y-4" novalidate>
+          <div>
+            <label for="authEmailInput" class="block text-xs font-medium text-[#374151] mb-1">E-mailadresse</label>
+            <input id="authEmailInput" type="email" autocomplete="email" required placeholder="dig@eksempel.dk" class="w-full rounded-xl border border-[#E5E7EB] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#065F46]/20 focus:border-[#065F46]" />
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label for="authPasswordInput" class="block text-xs font-medium text-[#374151]">Adgangskode</label>
+              <button type="button" id="authResetBtn" class="text-xs font-medium text-[#065F46] hover:underline">
+                Glemt adgangskode?
+              </button>
+            </div>
+            <input id="authPasswordInput" type="password" autocomplete="current-password" required minlength="6" placeholder="Mindst 6 tegn" class="w-full rounded-xl border border-[#E5E7EB] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#065F46]/20 focus:border-[#065F46]" />
+          </div>
+
+          <div id="authPasswordConfirmWrap" class="hidden">
+            <label for="authPasswordConfirmInput" class="block text-xs font-medium text-[#374151] mb-1">Bekræft adgangskode</label>
+            <input id="authPasswordConfirmInput" type="password" autocomplete="new-password" minlength="6" placeholder="Gentag adgangskode" class="w-full rounded-xl border border-[#E5E7EB] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#065F46]/20 focus:border-[#065F46]" />
+          </div>
+
+          <p id="authErrorBox" class="hidden text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5"></p>
+          <p id="authInfoBox" class="hidden text-xs font-medium text-[#065F46] bg-[#ECFDF5] border border-[#A7F3D0] rounded-xl px-3.5 py-2.5"></p>
+
+          <button type="submit" id="authSubmitBtn" class="w-full py-2.5 px-4 rounded-xl bg-[#111827] hover:bg-[#1F2937] disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-medium transition">
+            Log ind
+          </button>
+        </form>
+
+        <div class="relative flex items-center py-1">
+          <div class="flex-grow border-t border-[#E5E7EB]"></div>
+          <span class="shrink mx-3 text-xs text-[#6B7280]">eller</span>
+          <div class="flex-grow border-t border-[#E5E7EB]"></div>
+        </div>
+
+        <button type="button" id="googleSignInBtn" class="w-full inline-flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl bg-white hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed border border-[#E5E7EB] text-sm font-medium text-[#111827] transition">
+          <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"/>
+            <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24Z"/>
+            <path fill="#FBBC05" d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14Z"/>
+            <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z"/>
+          </svg>
+          <span>Fortsæt med Google</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Server Sync Gate (vises når logget ind, indtil Firestore-data er hentet sikkert fra serveren) -->
+  <div id="syncGate" class="hidden min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-white border border-[#E5E7EB] rounded-2xl shadow-sm p-6 sm:p-8 text-center space-y-5">
+      <div id="syncLoadingView" class="space-y-4">
+        <div class="mx-auto w-8 h-8 border-2 border-[#E5E7EB] border-t-[#065F46] rounded-full animate-spin"></div>
+        <div class="space-y-1">
+          <h2 class="text-base font-semibold text-[#111827]">Henter dine data fra serveren…</h2>
+          <p id="syncLoadingEmail" class="text-xs text-[#6B7280]"></p>
+        </div>
+        <button type="button" id="syncCancelSignOutBtn" class="text-xs font-medium text-[#6B7280] hover:text-[#111827] hover:underline">
+          Log ud
+        </button>
+      </div>
+
+      <div id="syncErrorView" class="hidden space-y-4 text-left">
+        <div class="flex items-start gap-3">
+          <div class="w-10 h-10 rounded-xl bg-red-50 border border-red-200 flex items-center justify-center text-red-600 shrink-0">
+            <i data-lucide="cloud-off" class="w-5 h-5"></i>
+          </div>
+          <div class="space-y-1">
+            <h2 class="text-base font-semibold text-[#111827]">Kunne ikke hente data fra Firestore</h2>
+            <p class="text-xs text-[#4B5563] leading-relaxed">
+              For at beskytte dine gemte data mod at blive overskrevet af standardværdier, er appen låst indtil serverdata kan hentes.
+            </p>
+          </div>
+        </div>
+        <div id="syncErrorDetail" class="text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5 break-words"></div>
+        <div class="flex items-center gap-2.5 pt-1">
+          <button type="button" id="retrySyncBtn" class="flex-1 inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#111827] hover:bg-[#1F2937] text-white text-sm font-medium transition">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            <span>Prøv igen</span>
+          </button>
+          <button type="button" id="syncErrorSignOutBtn" class="py-2.5 px-4 rounded-xl border border-[#E5E7EB] bg-white hover:bg-gray-50 text-sm font-medium text-[#374151] transition">
+            Log ud
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Authenticated App Shell -->
+  <div id="appShell" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
+
+    <!-- Konflikt-advarsel hvis serverdata er ændret andetsteds -->
+    <div id="conflictBanner" class="hidden bg-[#FFFBEB] border border-[#FDE68A] rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div class="flex items-start sm:items-center gap-2.5 text-sm text-[#92400E]">
+        <i data-lucide="alert-triangle" class="w-4 h-4 text-[#B45309] shrink-0 mt-0.5 sm:mt-0"></i>
+        <span>Dine data er blevet opdateret på serveren fra en anden fane eller enhed. Hent nyeste data før du gemmer flere ændringer.</span>
+      </div>
+      <button type="button" id="resolveConflictBtn" class="px-3 py-1.5 text-xs font-medium text-white bg-[#B45309] hover:bg-[#92400E] rounded-lg transition shrink-0 self-start sm:self-auto">
+        Hent nyeste fra server
+      </button>
+    </div>
+
+    <!-- Valgfri migrering af ældre lokale browserdata (kun hvis serverdokument ikke findes endnu) -->
+    <div id="legacyImportBanner" class="hidden bg-white border border-[#A7F3D0] rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div class="flex items-start sm:items-center gap-2.5 text-sm text-[#374151]">
+        <i data-lucide="hard-drive-upload" class="w-4 h-4 text-[#065F46] shrink-0 mt-0.5 sm:mt-0"></i>
+        <span id="legacyImportText">Der blev fundet eksisterende lån gemt lokalt i denne browser. Vil du overføre dem til din konto?</span>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button type="button" id="importLegacyBtn" class="px-3 py-1.5 text-xs font-medium text-white bg-[#065F46] hover:bg-[#047857] rounded-lg transition">
+          Overfør til Firestore
+        </button>
+        <button type="button" id="dismissLegacyBtn" class="px-3 py-1.5 text-xs font-medium text-[#6B7280] hover:text-[#111827] rounded-lg hover:bg-gray-100 transition">
+          Ignorer
+        </button>
+      </div>
+    </div>
+
+    <!-- Demo Banner (kun synlig hvis eksempeldata er indlæst og ikke afvist) -->
+    <div id="demoBanner" class="hidden bg-white border border-[#E5E7EB] rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div class="flex items-start sm:items-center gap-2.5 text-sm text-[#4B5563]">
+        <i data-lucide="info" class="w-4 h-4 text-[#6B7280] shrink-0 mt-0.5 sm:mt-0"></i>
+        <span>Eksempeldata er indlæst, så du kan se alle funktioner med det samme. Rediger tallene eller ryd for at starte forfra.</span>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button type="button" id="clearAllDataBtn" class="px-3 py-1.5 text-xs font-medium text-[#B45309] bg-[#FFFBEB] hover:bg-[#FEF3C7] border border-[#FDE68A] rounded-lg transition">
+          Ryd alle lån
+        </button>
+        <button type="button" id="dismissDemoBtn" class="p-1.5 text-[#6B7280] hover:text-[#111827] rounded-lg hover:bg-gray-100 transition" aria-label="Luk besked">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 1. Top Header & Quick Actions -->
+    <header class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div>
+        <div class="flex flex-wrap items-center gap-2.5">
+          <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-[#111827]">Gældsoverblik</h1>
+          <span id="syncStatusBadge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[#ECFDF5] text-[#065F46] border border-[#A7F3D0]">
+            <span class="w-1.5 h-1.5 rounded-full bg-[#059669]"></span>
+            <span>Synkroniseret</span>
+          </span>
+        </div>
+        <p id="headerSubtitle" class="mt-1 text-sm text-[#6B7280] tabular-nums"></p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2.5">
+        <button type="button" id="openAddLoanBtn" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111827] hover:bg-[#1F2937] text-white text-sm font-medium shadow-sm transition focus:outline-none focus:ring-2 focus:ring-[#111827]/20">
+          <i data-lucide="plus" class="w-4 h-4"></i>
+          <span>Tilføj lån</span>
+        </button>
+        <button type="button" id="exportJsonBtn" class="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white hover:bg-gray-50 text-[#111827] border border-[#E5E7EB] text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-gray-200">
+          <i data-lucide="download" class="w-4 h-4 text-[#6B7280]"></i>
+          <span>Eksporter JSON</span>
+        </button>
+        <button type="button" id="importJsonBtn" class="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white hover:bg-gray-50 text-[#111827] border border-[#E5E7EB] text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-gray-200">
+          <i data-lucide="upload" class="w-4 h-4 text-[#6B7280]"></i>
+          <span>Importer JSON</span>
+        </button>
+        <input type="file" id="importFileInput" accept=".json,application/json" class="hidden" />
+        <button type="button" id="refreshServerBtn" title="Hent nyeste data fra Firestore" class="inline-flex items-center justify-center p-2.5 rounded-xl bg-white hover:bg-gray-50 text-[#374151] border border-[#E5E7EB] transition focus:outline-none focus:ring-2 focus:ring-gray-200" aria-label="Opdater fra server">
+          <i data-lucide="refresh-cw" class="w-4 h-4 text-[#6B7280]"></i>
+        </button>
+        <div class="inline-flex items-center gap-2 pl-3 pr-1.5 py-1 rounded-xl bg-white border border-[#E5E7EB]">
+          <span id="userAccountEmail" class="text-xs font-medium text-[#4B5563] max-w-[160px] truncate"></span>
+          <button type="button" id="signOutBtn" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#374151] hover:bg-gray-100 transition">
+            <i data-lucide="log-out" class="w-3.5 h-3.5 text-[#6B7280]"></i>
+            <span>Log ud</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 2. Executive KPI Summary Bar -->
+    <section aria-label="Nøgletal" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="bg-white border border-[#E5E7EB] rounded-xl p-5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium uppercase tracking-wider text-[#6B7280]">Samlet gæld lige nu</span>
+          <i data-lucide="wallet" class="w-4 h-4 text-[#6B7280]"></i>
+        </div>
+        <div id="kpiTotalDebt" class="mt-2.5 text-2xl sm:text-3xl font-semibold text-[#111827] tabular-nums">0 kr.</div>
+        <p id="kpiTotalDebtSub" class="mt-1.5 text-xs text-[#6B7280] tabular-nums"></p>
+      </div>
+
+      <div class="bg-white border border-[#E5E7EB] rounded-xl p-5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium uppercase tracking-wider text-[#6B7280]">Månedlig nettoændring</span>
+          <i data-lucide="activity" class="w-4 h-4 text-[#6B7280]"></i>
+        </div>
+        <div id="kpiNetChange" class="mt-2.5 text-2xl sm:text-3xl font-semibold tabular-nums">0 kr.</div>
+        <p id="kpiNetChangeSub" class="mt-1.5 text-xs text-[#6B7280] tabular-nums"></p>
+      </div>
+
+      <div class="bg-white border border-[#E5E7EB] rounded-xl p-5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium uppercase tracking-wider text-[#6B7280]">Forventet gældfri dato</span>
+          <i data-lucide="calendar-check" class="w-4 h-4 text-[#6B7280]"></i>
+        </div>
+        <div id="kpiDebtFreeDate" class="mt-2.5 text-2xl sm:text-3xl font-semibold text-[#111827] tabular-nums">—</div>
+        <p id="kpiDebtFreeSub" class="mt-1.5 text-xs text-[#6B7280] tabular-nums"></p>
+      </div>
+
+      <div class="bg-white border border-[#E5E7EB] rounded-xl p-5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium uppercase tracking-wider text-[#6B7280]">Samlede renteomkostninger</span>
+          <i data-lucide="percent" class="w-4 h-4 text-[#6B7280]"></i>
+        </div>
+        <div id="kpiTotalInterest" class="mt-2.5 text-2xl sm:text-3xl font-semibold text-[#111827] tabular-nums">0 kr.</div>
+        <p id="kpiTotalInterestSub" class="mt-1.5 text-xs text-[#6B7280] tabular-nums"></p>
+      </div>
+    </section>
+
+    <!-- 3. Interactive Forecast & "Hvad nu hvis?" Simulator -->
+    <section aria-label="Prognose og simulator" class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <!-- Chart Panel -->
+      <div class="lg:col-span-8 bg-white border border-[#E5E7EB] rounded-xl p-5 sm:p-6 flex flex-col">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <div>
+            <h2 class="text-base font-semibold text-[#111827]">Prognose</h2>
+            <p id="chartSubtitle" class="text-xs text-[#6B7280] mt-0.5">Måned-for-måned gældsudvikling frem til 0 kr. (maks. 30 år)</p>
+          </div>
+          <div class="inline-flex p-1 bg-[#F3F4F6] rounded-lg self-start sm:self-auto" role="group" aria-label="Visningstype for graf">
+            <button type="button" id="chartModeTotalBtn" class="px-3 py-1.5 text-xs font-medium rounded-md bg-white text-[#111827] shadow-sm transition">
+              Samlet gæld
+            </button>
+            <button type="button" id="chartModeLoansBtn" class="px-3 py-1.5 text-xs font-medium rounded-md text-[#6B7280] hover:text-[#111827] transition">
+              Pr. lån
+            </button>
+          </div>
+        </div>
+
+        <div id="chartContainer" class="relative h-[270px] sm:h-[340px] w-full">
+          <canvas id="debtChart"></canvas>
+          <div id="chartFallback" class="hidden h-full w-full flex items-center justify-center text-sm text-[#6B7280] bg-[#F9FAFB] rounded-lg border border-dashed border-[#E5E7EB]">
+            Tilføj et lån for at se gældsprognosen.
+          </div>
+        </div>
+
+        <div id="chartCapWarning" class="hidden mt-3 flex items-center gap-2 text-xs text-[#B45309] bg-[#FFFBEB] border border-[#FDE68A] rounded-lg px-3 py-2">
+          <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0"></i>
+          <span>Prognosen er begrænset til 30 år (360 måneder), fordi de nuværende ydelser ikke indfrier hele gælden inden for perioden.</span>
+        </div>
+      </div>
+
+      <!-- Simulator Panel -->
+      <div class="lg:col-span-4 bg-white border border-[#E5E7EB] rounded-xl p-5 sm:p-6 flex flex-col justify-between space-y-5">
+        <div class="space-y-5">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-base font-semibold text-[#111827]">Hvad nu hvis?</h2>
+              <p class="text-xs text-[#6B7280] mt-0.5">Test effekten af ekstra afdrag</p>
+            </div>
+            <button type="button" id="resetSimBtn" class="hidden text-xs font-medium text-[#065F46] hover:underline">
+              Nulstil
+            </button>
+          </div>
+
+          <!-- Extra Monthly Control -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between text-sm">
+              <label for="simExtraMonthlyInput" class="font-medium text-[#111827]">Ekstra pr. måned</label>
+              <div class="flex items-center gap-1">
+                <input id="simExtraMonthlyInput" type="number" min="0" max="50000" step="100" value="0" class="w-24 text-right text-sm font-semibold tabular-nums border border-[#E5E7EB] rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#065F46]/20 focus:border-[#065F46]" />
+                <span class="text-xs text-[#6B7280]">kr.</span>
+              </div>
+            </div>
+            <input id="simExtraMonthlyRange" type="range" min="0" max="10000" step="100" value="0" class="w-full scandi-slider" aria-label="Ekstra månedligt afdrag" />
+            <div class="flex flex-wrap gap-1.5 pt-0.5">
+              <button type="button" data-sim-monthly="500" class="sim-chip-monthly px-2.5 py-1 text-xs font-medium rounded-md border border-[#E5E7EB] bg-[#F9FAFB] hover:bg-gray-100 text-[#374151] tabular-nums transition">+500 kr.</button>
+              <button type="button" data-sim-monthly="1000" class="sim-chip-monthly px-2.5 py-1 text-xs font-medium rounded-md border border-[#E5E7EB] bg-[#F9FAFB] hover:bg-gray-100 text-[#374151] tabular-nums transition">+1.000 kr.</button>
+              <button type="button" data-sim-monthly="2500" class="sim-chip-monthly px-2.5 py-1 text-xs font-medium rounded-md border border-[#E5E7EB] bg-[#F9FAFB] hover:bg-gray-100 text-[#374151] tabular-nums transition">+2.500 kr.</button>
+            </div>
+          </div>
+
+          <!-- Lump Sum Now Control -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between text-sm">
+              <label for="simLumpSumInput" class="font-medium text-[#111827]">Engangsbeløb i dag</label>
+              <div class="flex items-center gap-1">
+                <input id="simLumpSumInput" type="number" min="0" max="1000000" step="500" value="0" class="w-24 text-right text-sm font-semibold tabular-nums border border-[#E5E7EB] rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#065F46]/20 focus:border-[#065F46]" />
+                <span class="text-xs text-[#6B7280]">kr.</span>
+              </div>
+            </div>
+            <input id="simLumpSumRange" type="range" min="0" max="50000" step="500" value="0" class="w-full scandi-slider" aria-label="Engangsbeløb i dag" />
+            <div class="flex flex-wrap gap-1.5 pt-0.5">
+              <button type="button" data-sim-lump="5000" class="sim-chip-lump px-2.5 py-1 text-xs font-medium rounded-md border border-[#E5E7EB] bg-[#F9FAFB] hover:bg-gray-100 text-[#374151] tabular-nums transition">+5.000 kr.</button>
+              <button type="button" data-sim-lump="10000" class="sim-chip-lump px-2.5 py-1 text-xs font-medium rounded-md border border-[#E5E7EB] bg-[#F9FAFB] hover:bg-gray-100 text-[#374151] tabular-nums transition">+10.000 kr.</button>
+              <button type="button" data-sim-lump="25000" class="sim-chip-lump px-2.5 py-1 text-xs font-medium rounded-md border border-[#E5E7EB] bg-[#F9FAFB] hover:bg-gray-100 text-[#374151] tabular-nums transition">+25.000 kr.</button>
+            </div>
+          </div>
+
+          <!-- Strategy Toggle -->
+          <div class="space-y-1.5">
+            <span class="block text-xs font-medium text-[#6B7280]">Rækkefølge for ekstra afdrag</span>
+            <div class="grid grid-cols-2 gap-1.5 p-1 bg-[#F3F4F6] rounded-lg">
+              <button type="button" id="strategyAvalancheBtn" class="px-2.5 py-1.5 text-xs font-medium rounded-md bg-white text-[#111827] shadow-sm transition">
+                Højeste rente
+              </button>
+              <button type="button" id="strategySnowballBtn" class="px-2.5 py-1.5 text-xs font-medium rounded-md text-[#6B7280] hover:text-[#111827] transition">
+                Laveste gæld
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Simulator Impact Summary -->
+        <div id="simImpactCard" class="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4 space-y-2.5 transition-colors">
+          <div class="flex items-center justify-between text-xs text-[#6B7280]">
+            <span>Simuleret gældfri dato</span>
+            <span id="simDebtFreeDate" class="font-semibold text-[#111827] tabular-nums">—</span>
+          </div>
+          <div class="flex items-center justify-between text-xs text-[#6B7280]">
+            <span>Tid sparet</span>
+            <span id="simTimeSaved" class="font-semibold text-[#111827] tabular-nums">0 mdr.</span>
+          </div>
+          <div class="flex items-center justify-between text-xs text-[#6B7280]">
+            <span>Sparet i renter</span>
+            <span id="simInterestSaved" class="font-semibold text-[#111827] tabular-nums">0 kr.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Individual Loan Cards -->
+    <section aria-label="Dine lån" class="space-y-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <h2 class="text-lg font-semibold text-[#111827]">Dine lån</h2>
+          <span id="loanCountBadge" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white border border-[#E5E7EB] text-[#6B7280] tabular-nums">0</span>
+        </div>
+        <button type="button" id="loadSampleBtn" class="hidden text-xs font-medium text-[#065F46] hover:underline">
+          Indlæs eksempeldata
+        </button>
+      </div>
+
+      <div id="loansGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5"></div>
+
+      <!-- Empty State -->
+      <div id="emptyLoansState" class="hidden bg-white border border-dashed border-[#D1D5DB] rounded-xl p-10 text-center space-y-3">
+        <div class="mx-auto w-11 h-11 rounded-full bg-[#F3F4F6] flex items-center justify-center text-[#6B7280]">
+          <i data-lucide="landmark" class="w-5 h-5"></i>
+        </div>
+        <h3 class="text-base font-semibold text-[#111827]">Ingen lån registreret endnu</h3>
+        <p class="text-sm text-[#6B7280] max-w-md mx-auto">Tilføj dit SU-lån eller et privat lån for at se samlet gæld, månedlig nettoændring og hvornår du er gældfri.</p>
+        <div class="pt-2 flex items-center justify-center gap-3">
+          <button type="button" id="emptyAddLoanBtn" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#111827] hover:bg-[#1F2937] text-white text-sm font-medium transition">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            <span>Tilføj dit første lån</span>
+          </button>
+          <button type="button" id="emptySampleBtn" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white hover:bg-gray-50 border border-[#E5E7EB] text-sm font-medium text-[#374151] transition">
+            Indlæs eksempeldata
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. Transaction History for Extra Payments -->
+    <section aria-label="Historik for ekstra afdrag" class="bg-white border border-[#E5E7EB] rounded-xl p-5 sm:p-6 space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div>
+          <h2 class="text-base font-semibold text-[#111827]">Historik for ekstra afdrag</h2>
+          <p class="text-xs text-[#6B7280] mt-0.5">Alle registrerede engangsindbetalinger trækkes direkte fra restgælden</p>
+        </div>
+        <div class="text-xs font-medium text-[#065F46] bg-[#ECFDF5] border border-[#A7F3D0] rounded-lg px-3 py-1.5 tabular-nums self-start sm:self-auto">
+          Samlet ekstra afdraget: <span id="totalExtraPaidBadge">0 kr.</span>
+        </div>
+      </div>
+
+      <div id="transactionEmptyState" class="text-sm text-[#6B7280] py-4 border-t border-[#F3F4F6]">
+        Ingen ekstra afdrag registreret endnu. Klik på <span class="font-medium text-[#111827]">Registrer ekstra afdrag</span> på et lån for at logge en indbetaling.
+      </div>
+
+      <div id="transactionTableWrapper" class="hidden overflow-x-auto border-t border-[#F3F4F6]">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="text-xs font-medium text-[#6B7280] border-b border-[#F3F4F6]">
+              <th class="py-2.5 pr-4">Dato</th>
+              <th class="py-2.5 pr-4">Lån</th>
+              <th class="py-2.5 pr-4">Note</th>
+              <th class="py-2.5 pr-4 text-right">Beløb</th>
+              <th class="py-2.5 text-right">Handling</th>
+            </tr>
+          </thead>
+          <tbody id="transactionListBody" class="divide-y divide-[#F3F4F6] text-sm"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- Modal: Add / Edit Loan -->
+  <div id="loanModal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="loanModalTitle">
+    <div class="bg-white border border-[#E5E7EB] rounded-2xl shadow-xl w-full max-w-xl max-h-[92vh] overflow-y-auto">
+      <div class="sticky top-0 bg-white border-b border-[#F3F4F6] px-6 py-4 flex items-center justify-between z-10">
+        <h3 id="loanModalTitle" class="text-lg font-semibold text-[#111827]">Tilføj lån</h3>
+        <button type="button" id="closeLoanModalBtn" class="p-1.5 rounded-lg text-[#6B7280] hover:text-[#111827] hover:bg-gray-100 transition" aria-label="Luk modal">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form id="loanForm" class="p-6 space-y-5" novalidate>
+        <input type="hidden" id="loanIdField" />
+
+        <!-- Loan Type Selector -->
+        <div class="space-y-1.5">
+          <label class="block text-xs font-medium uppercase tracking-wider text-[#6B7280]">Låntype</label>
+          <div class="grid grid-cols-2 gap-2 p-1 bg-[#F3F4F6] rounded-xl">
+            <button type="button" id="typeSuBtn" class="py-2 px-3 rounded-lg text-sm font-medium transition bg-white text-[#111827] shadow-sm">
+              Løbende SU-lån
+            </button>
+            <button type="button" id="typePrivateBtn" class="py-2 px-3 rounded-lg text-sm font-medium transition text-[#6B7280] hover:text-[#111827]">
+              Fast / Privat lån
+            </button>
+          </div>
+        </div>
+
+        <!-- Loan Name -->
+        <div>
+          <label for="loanNameInput" class="block text-sm font-medium text-[#111827] mb-1">Navn på lån</label>
+          <input id="loanNameInput" type="text" required maxlength="80" placeholder="f.eks. SU-lån eller Lån hos bedsteforældre" class="w-full rounded-xl border border-[#E5E7EB] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#111827]/15 focus:border-[#111827]" />
+        </div>
+
+        <!-- SU-lån Fields -->
+        <div id="suFields" class="space-y-5">
+          <div class="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4 space-y-4">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold uppercase tracking-wider text-[#B45309]">Fase 1 · Opbygning (Under uddannelse)</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label for="suBalanceInput" class="block text-xs font-medium text-[#374151] mb-1">Nuværende saldo (kr.)</label>
+                <input id="suBalanceInput" type="number" min="0" step="1" class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#111827]/15" />
+              </div>
+              <div>
+                <label for="suDisbursementInput" class="block text-xs font-medium text-[#374151] mb-1">Månedlig udbetaling (kr./md.)</label>
+                <input id="suDisbursementInput" type="number" min="0" step="1" class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#111827]/15" />
+              </div>
+              <div>
+                <label for="suDisbursementEndInput" class="block text-xs font-medium text-[#374151] mb-1">Slutdato for udbetaling</label>
+                <input id="suDisbursementEndInput" type="month" placeholder="ÅÅÅÅ-MM" class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#111827]/15" />
+              </div>
+              <div>
+                <label for="suStudyRateInput" class="block text-xs font-medium text-[#374151] mb-1">Rente under uddannelse (% p.a.)</label>
+                <input id="suStudyRateInput" type="number" min="0" max="50" step="0.1" value="4.0" class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#111827]/15" />
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4 space-y-4">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold uppercase tracking-wider text-[#065F46]">Fase 2 · Afdrag (Tilbagebetaling)</span>
+              <span id="suGraceInfo" class="text-xs text-[#6B7280] tabular-nums"></span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label for="suRepayStartInput" class="block text-xs font-medium text-[#374151] mb-1">Startdato for afdrag</label>
+                <input id="suRepayStartInput" type="month" placeholder="ÅÅÅÅ-MM" class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#111827]/15" />
+              </div>
+              <div>
+                <label for="suRepayRateInput" class="block text-xs font-medium text-[#374151] mb-1">Rente efter uddannelse (% p.a.)</label>
+                <input id="suRepayRateInput" type="number" min="0" max="50" step="0.1" value="3.5" class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#111827]/15" />
+              </div>
+              <div class="sm:col-span-2">
+                <label for="suPaymentInput" class="block text-xs font-medium text-[#374151] mb-1">Månedlig ydelse (kr./md.)</label>
+                <input id="suPaymentInput" type="number" min="0" step="10" class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#111827]/15" />
+              </div>
+            </div>
+
+            <!-- Minimum Monthly Payment Helper -->
+            <div class="bg-white border border-[#E5E7EB] rounded-lg p-3 space-y-2.5">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <span class="text-xs font-medium text-[#374151]">Hjælper til minimumsydelse (afdragsperiode):</span>
+                <div class="inline-flex gap-1" role="group" aria-label="Vælg tilbagebetalingsår">
+                  <button type="button" data-su-years="7" class="su-year-btn px-2 py-1 text-xs rounded border border-[#E5E7EB] text-[#6B7280] hover:bg-gray-50 tabular-nums">7 år</button>
+                  <button type="button" data-su-years="10" class="su-year-btn px-2 py-1 text-xs rounded border border-[#065F46] bg-[#ECFDF5] text-[#065F46] font-medium tabular-nums">10 år</button>
+                  <button type="button" data-su-years="12" class="su-year-btn px-2 py-1 text-xs rounded border border-[#E5E7EB] text-[#6B7280] hover:bg-gray-50 tabular-nums">12 år</button>
+                  <button type="button" data-su-years="15" class="su-year-btn px-2 py-1 text-xs rounded border border-[#E5E7EB] text-[#6B7280] hover:bg-gray-50 tabular-nums">15 år</button>
+                </div>
+              </div>
+              <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
+                <div id="suMinPaymentSummary" class="text-[#6B7280] tabular-nums"></div>
+                <button type="button" id="applySuMinPaymentBtn" class="px-2.5 py-1 rounded-md bg-[#065F46] hover:bg-[#047857] text-white font-medium transition self-start sm:self-auto shrink-0">
+                  Anvend ydelse
+                </button>
+              </div>
+              <div id="suInterestWarning" class="hidden text-xs text-[#B45309] font-medium"></div>
+            </div>
+
+            <!-- Optional Peak Override for loans already in repayment -->
+            <div>
+              <label for="suPeakBalanceInput" class="block text-xs font-medium text-[#6B7280] mb-1">Saldo ved uddannelsesafslutning (valgfri, til % afbetalt)</label>
+              <input id="suPeakBalanceInput" type="number" min="0" step="100" placeholder="Beregnes automatisk hvis tom" class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#111827]/15" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Private / Fixed Loan Fields -->
+        <div id="privateFields" class="hidden space-y-4 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
+          <span class="block text-xs font-semibold uppercase tracking-wider text-[#374151]">Fast / Privat lån</span>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label for="privPrincipalInput" class="block text-xs font-medium text-[#374151] mb-1">Hovedstol / Oprindeligt beløb (kr.)</label>
+              <input id="privPrincipalInput" type="number" min="0" step="1" class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#111827]/15" />
+            </div>
+            <div>
+              <label for="privBalanceInput" class="block text-xs font-medium text-[#374151] mb-1">Nuværende restgæld (kr.)</label>
+              <input id="privBalanceInput" type="number" min="0" step="1" class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#111827]/15" />
+            </div>
+            <div>
+              <label for="privRateInput" class="block text-xs font-medium text-[#374151] mb-1">Årlig rente (% p.a.)</label>
+              <input id="privRateInput" type="number" min="0" max="50" step="0.1" value="0" class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#111827]/15" />
+            </div>
+            <div>
+              <label for="privStartInput" class="block text-xs font-medium text-[#374151] mb-1">Startdato</label>
+              <input id="privStartInput" type="month" placeholder="ÅÅÅÅ-MM" class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#111827]/15" />
+            </div>
+            <div>
+              <label for="privFrequencySelect" class="block text-xs font-medium text-[#374151] mb-1">Betalingsfrekvens</label>
+              <select id="privFrequencySelect" class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#111827]/15">
+                <option value="1">Månedlig (hver måned)</option>
+                <option value="3">Kvartalsvis (hver 3. måned)</option>
+                <option value="6">Halvårlig (hver 6. måned)</option>
+                <option value="12">Årlig (hver 12. måned)</option>
+                <option value="custom">Brugerdefineret interval</option>
+              </select>
+            </div>
+            <div id="privCustomIntervalWrap" class="hidden">
+              <label for="privCustomIntervalInput" class="block text-xs font-medium text-[#374151] mb-1">Antal måneder mellem betalinger</label>
+              <input id="privCustomIntervalInput" type="number" min="1" max="36" step="1" value="2" class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#111827]/15" />
+            </div>
+            <div class="sm:col-span-2">
+              <label id="privPaymentLabel" for="privPaymentInput" class="block text-xs font-medium text-[#374151] mb-1">Månedlig ydelse (kr./md.)</label>
+              <input id="privPaymentInput" type="number" min="0" step="10" class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#111827]/15" />
+            </div>
+          </div>
+          <div id="privPayoffPreview" class="text-xs text-[#6B7280] tabular-nums"></div>
+        </div>
+
+        <p id="loanFormError" class="hidden text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2"></p>
+
+        <div class="pt-2 border-t border-[#F3F4F6] flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <button type="button" id="deleteLoanBtn" class="hidden px-3 py-2 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition">
+              Slet lån
+            </button>
+            <button type="button" id="confirmDeleteLoanBtn" class="hidden px-3 py-2 rounded-xl text-sm font-semibold bg-red-600 hover:bg-red-700 text-white transition">
+              Bekræft sletning
+            </button>
+          </div>
+          <div class="flex items-center gap-2 ml-auto">
+            <button type="button" id="cancelLoanModalBtn" class="px-4 py-2 rounded-xl border border-[#E5E7EB] bg-white hover:bg-gray-50 text-sm font-medium text-[#374151] transition">
+              Annuller
+            </button>
+            <button type="submit" id="loanFormSubmitBtn" class="px-4 py-2 rounded-xl bg-[#111827] hover:bg-[#1F2937] disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-medium transition">
+              Gem lån
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Quick Extra Payment -->
+  <div id="paymentModal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="paymentModalTitle">
+    <div class="bg-white border border-[#E5E7EB] rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+      <div class="border-b border-[#F3F4F6] px-6 py-4 flex items-center justify-between">
+        <div>
+          <h3 id="paymentModalTitle" class="text-lg font-semibold text-[#111827]">Registrer ekstra afdrag</h3>
+          <p id="paymentModalLoanName" class="text-xs text-[#6B7280] mt-0.5"></p>
+        </div>
+        <button type="button" id="closePaymentModalBtn" class="p-1.5 rounded-lg text-[#6B7280] hover:text-[#111827] hover:bg-gray-100 transition" aria-label="Luk modal">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form id="paymentForm" class="p-6 space-y-4" novalidate>
+        <input type="hidden" id="paymentLoanIdField" />
+
+        <div class="flex items-center justify-between text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl px-4 py-3">
+          <span class="text-[#6B7280]">Nuværende restgæld</span>
+          <span id="paymentCurrentBalance" class="font-semibold text-[#111827] tabular-nums">0 kr.</span>
+        </div>
+
+        <div class="space-y-2">
+          <label for="paymentAmountInput" class="block text-sm font-medium text-[#111827]">Ekstra afdragsbeløb (kr.)</label>
+          <input id="paymentAmountInput" type="number" min="1" step="1" required placeholder="f.eks. 2500" class="w-full rounded-xl border border-[#E5E7EB] px-3.5 py-2.5 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#065F46]/20 focus:border-[#065F46]" />
+          <div class="flex flex-wrap gap-1.5">
+            <button type="button" data-quick-pay="500" class="quick-pay-chip px-2.5 py-1 text-xs font-medium rounded-md border border-[#E5E7EB] bg-[#F9FAFB] hover:bg-gray-100 tabular-nums">500 kr.</button>
+            <button type="button" data-quick-pay="1000" class="quick-pay-chip px-2.5 py-1 text-xs font-medium rounded-md border border-[#E5E7EB] bg-[#F9FAFB] hover:bg-gray-100 tabular-nums">1.000 kr.</button>
+            <button type="button" data-quick-pay="2500" class="quick-pay-chip px-2.5 py-1 text-xs font-medium rounded-md border border-[#E5E7EB] bg-[#F9FAFB] hover:bg-gray-100 tabular-nums">2.500 kr.</button>
+            <button type="button" data-quick-pay="5000" class="quick-pay-chip px-2.5 py-1 text-xs font-medium rounded-md border border-[#E5E7EB] bg-[#F9FAFB] hover:bg-gray-100 tabular-nums">5.000 kr.</button>
+            <button type="button" id="quickPayAllBtn" class="px-2.5 py-1 text-xs font-medium rounded-md border border-[#A7F3D0] bg-[#ECFDF5] text-[#065F46] hover:bg-[#D1FAE5]">Indfri alt</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label for="paymentDateInput" class="block text-xs font-medium text-[#374151] mb-1">Dato</label>
+            <input id="paymentDateInput" type="date" required class="w-full rounded-xl border border-[#E5E7EB] px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#065F46]/20" />
+          </div>
+          <div>
+            <label for="paymentNoteInput" class="block text-xs font-medium text-[#374151] mb-1">Note (valgfri)</label>
+            <input id="paymentNoteInput" type="text" maxlength="80" placeholder="f.eks. Overskud fra skat" class="w-full rounded-xl border border-[#E5E7EB] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#065F46]/20" />
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between text-sm bg-[#ECFDF5] border border-[#A7F3D0] rounded-xl px-4 py-3 text-[#065F46]">
+          <span>Ny restgæld efter afdrag</span>
+          <span id="paymentNewBalancePreview" class="font-semibold tabular-nums">0 kr.</span>
+        </div>
+
+        <p id="paymentFormError" class="hidden text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2"></p>
+
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button type="button" id="cancelPaymentModalBtn" class="px-4 py-2 rounded-xl border border-[#E5E7EB] bg-white hover:bg-gray-50 text-sm font-medium text-[#374151] transition">
+            Annuller
+          </button>
+          <button type="submit" id="paymentFormSubmitBtn" class="px-4 py-2 rounded-xl bg-[#065F46] hover:bg-[#047857] disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-medium transition">
+            Registrer afdrag
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Bekræft overskrivning (f.eks. JSON-import eller rydning) -->
+  <div id="confirmModal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle">
+    <div class="bg-white border border-[#E5E7EB] rounded-2xl shadow-xl w-full max-w-md overflow-hidden p-6 space-y-4">
+      <div class="space-y-1.5">
+        <h3 id="confirmModalTitle" class="text-base font-semibold text-[#111827]">Bekræft handling</h3>
+        <p id="confirmModalMessage" class="text-sm text-[#4B5563] leading-relaxed"></p>
+      </div>
+      <div class="flex items-center justify-end gap-2 pt-1">
+        <button type="button" id="confirmModalCancelBtn" class="px-4 py-2 rounded-xl border border-[#E5E7EB] bg-white hover:bg-gray-50 text-sm font-medium text-[#374151] transition">
+          Annuller
+        </button>
+        <button type="button" id="confirmModalConfirmBtn" class="px-4 py-2 rounded-xl bg-[#111827] hover:bg-[#1F2937] disabled:opacity-60 text-white text-sm font-medium transition">
+          Bekræft
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Feedback -->
+  <div id="toast" class="hidden fixed bottom-5 right-5 z-50 bg-[#111827] text-white text-sm font-medium px-4 py-3 rounded-xl shadow-lg flex items-center gap-2.5 max-w-sm">
+    <i data-lucide="check-circle-2" class="w-4 h-4 text-[#34D399] shrink-0"></i>
+    <span id="toastMessage"></span>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-app.js';
+    import {
+      getAuth,
+      onAuthStateChanged,
+      signInWithEmailAndPassword,
+      createUserWithEmailAndPassword,
+      sendPasswordResetEmail,
+      signOut,
+      GoogleAuthProvider,
+      signInWithPopup,
+    } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-auth.js';
+    import {
+      getFirestore,
+      doc,
+      getDocFromServer,
+      runTransaction,
+      serverTimestamp,
+    } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-firestore.js';
+
+    const firebaseConfig = {
+      apiKey: 'AIzaSyCqEJ5yRtTB1KjAG0RmnEsDNiXFJBKwUxo',
+      authDomain: 'tempco2fugt.firebaseapp.com',
+      databaseURL: 'https://tempco2fugt-default-rtdb.europe-west1.firebasedatabase.app',
+      projectId: 'tempco2fugt',
+      storageBucket: 'tempco2fugt.firebasestorage.app',
+      messagingSenderId: '1068932962336',
+      appId: '1:1068932962336:web:213cb983c843e24b5a4445',
+      measurementId: 'G-TBSLF5F3LT',
+    };
+
+    const firebaseApp = initializeApp(firebaseConfig);
+    const auth = getAuth(firebaseApp);
+    // Bruger udelukkende Cloud Firestore (ikke Realtime Database)
+    const db = getFirestore(firebaseApp);
+
+    const LEGACY_STORAGE_KEY = 'gaeldsoverblik_state_v1';
+    const SERVER_FETCH_TIMEOUT_MS = 15000;
+    const MAX_MONTHS = 360; // 30 år maksimum for prognoser
+    const LOAN_PALETTE = ['#065F46', '#1D4ED8', '#B45309', '#6D28D9', '#0F766E', '#BE123C', '#4B5563'];
+
+      // ---------- Dato- & Formateringshjælpere ----------
+
+      function getTodayDate() {
+        return new Date();
+      }
+
+      function ymToIndex(ym) {
+        if (typeof ym !== 'string' || !/^\d{4}-\d{2}$/.test(ym)) return null;
+        const [y, m] = ym.split('-').map(Number);
+        if (m < 1 || m > 12) return null;
+        return y * 12 + (m - 1);
+      }
+
+      function indexToYm(idx) {
+        const y = Math.floor(idx / 12);
+        const m = (idx % 12) + 1;
+        return `${y}-${String(m).padStart(2, '0')}`;
+      }
+
+      function currentMonthIndex(refDate = getTodayDate()) {
+        return refDate.getFullYear() * 12 + refDate.getMonth();
+      }
+
+      function todayIsoDate(refDate = getTodayDate()) {
+        const y = refDate.getFullYear();
+        const m = String(refDate.getMonth() + 1).padStart(2, '0');
+        const d = String(refDate.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      }
+
+      function formatCurrency(value, decimals = 0) {
+        const safe = Number.isFinite(value) ? value : 0;
+        const rounded = decimals === 0 ? Math.round(safe) : safe;
+        const normalized = Math.abs(rounded) < 0.5 && decimals === 0 ? 0 : rounded;
+        return (
+          new Intl.NumberFormat('da-DK', {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
+          }).format(normalized) + ' kr.'
+        );
+      }
+
+      function formatSignedCurrency(value) {
+        const safe = Number.isFinite(value) ? Math.round(value) : 0;
+        if (safe === 0) return '0 kr.';
+        const absStr = new Intl.NumberFormat('da-DK', { maximumFractionDigits: 0 }).format(Math.abs(safe));
+        return safe > 0 ? `+${absStr} kr.` : `\u2212${absStr} kr.`;
+      }
+
+      function formatPercent(value) {
+        const safe = Number.isFinite(value) ? value : 0;
+        return (
+          new Intl.NumberFormat('da-DK', {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 2,
+          }).format(safe) + '%'
+        );
+      }
+
+      function formatMonthShortDa(monthIdx) {
+        const y = Math.floor(monthIdx / 12);
+        const m = monthIdx % 12;
+        return new Intl.DateTimeFormat('da-DK', { month: 'short', year: 'numeric' }).format(new Date(y, m, 1));
+      }
+
+      function formatFullDateDa(dateInput) {
+        const d = dateInput instanceof Date ? dateInput : new Date(dateInput + 'T12:00:00');
+        if (Number.isNaN(d.getTime())) return String(dateInput || '');
+        return new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'long', year: 'numeric' }).format(d);
+      }
+
+      function formatShortDateDa(isoDate) {
+        const d = new Date(isoDate + 'T12:00:00');
+        if (Number.isNaN(d.getTime())) return String(isoDate || '');
+        return new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'short', year: 'numeric' }).format(d);
+      }
+
+      function formatDurationDa(months) {
+        if (!Number.isFinite(months) || months <= 0) return '0 mdr.';
+        const y = Math.floor(months / 12);
+        const m = months % 12;
+        if (y === 0) return `${m} ${m === 1 ? 'md.' : 'mdr.'}`;
+        if (m === 0) return `${y} år`;
+        return `${y} år og ${m} ${m === 1 ? 'md.' : 'mdr.'}`;
+      }
+
+      function escapeHtml(str) {
+        return String(str ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function clamp(val, min, max) {
+        return Math.min(max, Math.max(min, val));
+      }
+
+      function generateId(prefix) {
+        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+          return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
+        }
+        return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+      }
+
+      // ---------- Finansiel Beregningsmotor ----------
+
+      function getLoanPhaseAtMonth(loan, monthIdx) {
+        if ((loan.balance || 0) <= 0.005) return 'paid';
+        if (loan.type === 'su') {
+          const endIdx = ymToIndex(loan.disbursementEndMonth) ?? monthIdx;
+          const repayIdx = ymToIndex(loan.repaymentStartMonth) ?? (endIdx + 1);
+          if (monthIdx <= endIdx) return 'disbursing';
+          if (monthIdx < repayIdx) return 'grace';
+          return 'repaying';
+        }
+        const startIdx = ymToIndex(loan.startMonth) ?? monthIdx;
+        return monthIdx < startIdx ? 'grace' : 'repaying';
+      }
+
+      function getLoanCurrentRate(loan, monthIdx) {
+        if (loan.type === 'su') {
+          const endIdx = ymToIndex(loan.disbursementEndMonth) ?? monthIdx;
+          return monthIdx <= endIdx ? (loan.studyRate || 0) : (loan.repaymentRate || 0);
+        }
+        return loan.annualRate || 0;
+      }
+
+      function stepLoanMonth(loan, balance, monthIdx) {
+        if (balance <= 0.005) {
+          return { balance: 0, interest: 0, disbursement: 0, payment: 0, phase: 'paid', rate: 0 };
+        }
+
+        if (loan.type === 'su') {
+          const endIdx = ymToIndex(loan.disbursementEndMonth) ?? (monthIdx - 1);
+          const repayIdx = ymToIndex(loan.repaymentStartMonth) ?? (endIdx + 1);
+
+          if (monthIdx <= endIdx) {
+            const disb = Math.max(0, Number(loan.monthlyDisbursement) || 0);
+            const rate = Math.max(0, Number(loan.studyRate) || 0);
+            const r = rate / 100 / 12;
+            const withDisb = balance + disb;
+            const interest = withDisb * r;
+            return {
+              balance: withDisb + interest,
+              interest,
+              disbursement: disb,
+              payment: 0,
+              phase: 'disbursing',
+              rate,
+            };
+          }
+
+          const rate = Math.max(0, Number(loan.repaymentRate) || 0);
+          const r = rate / 100 / 12;
+          const interest = balance * r;
+
+          if (monthIdx < repayIdx) {
+            return {
+              balance: balance + interest,
+              interest,
+              disbursement: 0,
+              payment: 0,
+              phase: 'grace',
+              rate,
+            };
+          }
+
+          const due = balance + interest;
+          const scheduled = Math.max(0, Number(loan.monthlyPayment) || 0);
+          const payment = Math.min(due, scheduled);
+          const nextBal = Math.max(0, due - payment);
+          return {
+            balance: nextBal <= 0.005 ? 0 : nextBal,
+            interest,
+            disbursement: 0,
+            payment,
+            phase: 'repaying',
+            rate,
+          };
+        }
+
+        // Fast / Privat lån
+        const startIdx = ymToIndex(loan.startMonth) ?? monthIdx;
+        const interval = Math.max(1, Math.round(Number(loan.paymentIntervalMonths) || 1));
+        const rate = Math.max(0, Number(loan.annualRate) || 0);
+        const r = rate / 100 / 12;
+        const interest = balance * r;
+        const due = balance + interest;
+        const isPayMonth = monthIdx >= startIdx && ((monthIdx - startIdx) % interval === 0);
+        const scheduled = isPayMonth ? Math.max(0, Number(loan.monthlyPayment) || 0) : 0;
+        const payment = Math.min(due, scheduled);
+        const nextBal = Math.max(0, due - payment);
+
+        return {
+          balance: nextBal <= 0.005 ? 0 : nextBal,
+          interest,
+          disbursement: 0,
+          payment,
+          phase: monthIdx < startIdx ? 'grace' : 'repaying',
+          rate,
+        };
+      }
+
+      function computeSuMilestones(suLoan, baseMonthIdx) {
+        const endIdx = ymToIndex(suLoan.disbursementEndMonth) ?? (baseMonthIdx - 1);
+        const repayIdx = ymToIndex(suLoan.repaymentStartMonth) ?? (endIdx + 1);
+
+        let bal = Math.max(0, Number(suLoan.balance) || 0);
+        let gradBal = bal;
+        let peakFutureBal = bal;
+
+        const stopIdx = Math.max(endIdx, repayIdx - 1);
+        for (let m = baseMonthIdx + 1; m <= stopIdx; m++) {
+          const step = stepLoanMonth(suLoan, bal, m);
+          bal = step.balance;
+          if (m === endIdx) gradBal = bal;
+          if (bal > peakFutureBal) peakFutureBal = bal;
+        }
+
+        const balAtRepayStart = bal;
+        const storedPeak = Math.max(0, Number(suLoan.peakBalance) || 0);
+        const referencePeak = Math.max(storedPeak, gradBal, peakFutureBal, suLoan.balance || 0);
+
+        return {
+          projectedGraduationBalance: gradBal,
+          projectedRepaymentStartBalance: balAtRepayStart,
+          referencePeak,
+        };
+      }
+
+      function calculateAnnuityPayment(principal, annualRatePct, years) {
+        const P = Math.max(0, Number(principal) || 0);
+        const N = Math.max(1, Math.round(years * 12));
+        if (P <= 0) return 0;
+        const r = Math.max(0, Number(annualRatePct) || 0) / 100 / 12;
+        if (r === 0) return Math.ceil(P / N);
+        const factor = Math.pow(1 + r, N);
+        return Math.ceil((P * r * factor) / (factor - 1));
+      }
+
+      function simulateSingleLoan(loan, baseMonthIdx) {
+        let bal = Math.max(0, Number(loan.balance) || 0);
+        const balances = [bal];
+        let totalInterest = 0;
+        let payoffMonths = bal <= 0.005 ? 0 : null;
+        let firstMonthChange = 0;
+
+        for (let t = 1; t <= MAX_MONTHS; t++) {
+          if (bal <= 0.005) break;
+          const mIdx = baseMonthIdx + t;
+          const prevBal = bal;
+          const step = stepLoanMonth(loan, bal, mIdx);
+          bal = step.balance;
+          totalInterest += step.interest;
+          balances.push(bal);
+          if (t === 1) firstMonthChange = bal - prevBal;
+          if (bal <= 0.005 && payoffMonths === null) {
+            payoffMonths = t;
+            break;
+          }
+        }
+
+        const cappedAt30Years = payoffMonths === null && bal > 0.005;
+        const payoffMonthIdx = payoffMonths !== null ? baseMonthIdx + payoffMonths : null;
+
+        let referencePeak = 0;
+        let paidPercent = 0;
+        let suMilestones = null;
+
+        if (loan.type === 'su') {
+          suMilestones = computeSuMilestones(loan, baseMonthIdx);
+          referencePeak = suMilestones.referencePeak;
+          const currentPhase = getLoanPhaseAtMonth(loan, baseMonthIdx);
+          if (currentPhase === 'paid') {
+            paidPercent = 100;
+          } else if (currentPhase === 'disbursing') {
+            paidPercent = 0;
+          } else if (referencePeak > 0) {
+            paidPercent = clamp(((referencePeak - (loan.balance || 0)) / referencePeak) * 100, 0, 100);
+          }
+        } else {
+          const orig = Math.max(0, Number(loan.originalPrincipal) || 0, Number(loan.balance) || 0);
+          referencePeak = orig;
+          if ((loan.balance || 0) <= 0.005) {
+            paidPercent = 100;
+          } else if (orig > 0) {
+            paidPercent = clamp(((orig - (loan.balance || 0)) / orig) * 100, 0, 100);
+          }
+        }
+
+        return {
+          balances,
+          totalInterest,
+          payoffMonths,
+          payoffMonthIdx,
+          cappedAt30Years,
+          firstMonthChange,
+          referencePeak,
+          paidPercent,
+          suMilestones,
+        };
+      }
+
+      function sortLoanIndicesByStrategy(loanList, balances, monthIdx, strategy) {
+        const activeIndices = [];
+        for (let i = 0; i < loanList.length; i++) {
+          if (balances[i] > 0.005) activeIndices.push(i);
+        }
+
+        // Prioriter lån der er i aktiv afdragsfase først; fald tilbage til øvrige aktive lån
+        const repayingIndices = activeIndices.filter((i) => getLoanPhaseAtMonth(loanList[i], monthIdx) === 'repaying');
+        const pool = repayingIndices.length > 0 ? repayingIndices : activeIndices;
+
+        pool.sort((a, b) => {
+          if (strategy === 'snowball') {
+            return balances[a] - balances[b];
+          }
+          // Lavine: højeste aktuelle rente først; ved lighed laveste gæld først
+          const rateDiff = getLoanCurrentRate(loanList[b], monthIdx) - getLoanCurrentRate(loanList[a], monthIdx);
+          if (Math.abs(rateDiff) > 1e-6) return rateDiff;
+          return balances[a] - balances[b];
+        });
+
+        return pool;
+      }
+
+      function simulatePortfolio(loans, baseMonthIdx, options = {}) {
+        const extraMonthly = Math.max(0, Number(options.extraMonthly) || 0);
+        const lumpSumNow = Math.max(0, Number(options.lumpSumNow) || 0);
+        const strategy = options.strategy === 'snowball' ? 'snowball' : 'avalanche';
+
+        const balances = loans.map((l) => Math.max(0, Number(l.balance) || 0));
+
+        // Fordel eventuelt engangsbeløb i dag før måned 1 starter
+        if (lumpSumNow > 0) {
+          let remainingLump = lumpSumNow;
+          const order = sortLoanIndicesByStrategy(loans, balances, baseMonthIdx, strategy);
+          for (const idx of order) {
+            if (remainingLump <= 0.005) break;
+            const applied = Math.min(balances[idx], remainingLump);
+            balances[idx] = Math.max(0, balances[idx] - applied);
+            if (balances[idx] <= 0.005) balances[idx] = 0;
+            remainingLump -= applied;
+          }
+        }
+
+        const initialTotal = balances.reduce((sum, b) => sum + b, 0);
+        const monthIndices = [baseMonthIdx];
+        const totalSeries = [initialTotal];
+        const perLoanSeries = loans.map((_, i) => [balances[i]]);
+
+        let totalInterest = 0;
+        let payoffMonths = initialTotal <= 0.005 ? 0 : null;
+        let firstMonthBreakdown = { disbursement: 0, interest: 0, payment: 0, netChange: 0 };
+
+        for (let t = 1; t <= MAX_MONTHS; t++) {
+          const allZero = balances.every((b) => b <= 0.005);
+          if (allZero) break;
+
+          const mIdx = baseMonthIdx + t;
+          const prevTotal = balances.reduce((s, b) => s + b, 0);
+          let monthDisb = 0;
+          let monthInterest = 0;
+          let monthPay = 0;
+
+          for (let i = 0; i < loans.length; i++) {
+            const step = stepLoanMonth(loans[i], balances[i], mIdx);
+            balances[i] = step.balance;
+            totalInterest += step.interest;
+            monthDisb += step.disbursement;
+            monthInterest += step.interest;
+            monthPay += step.payment;
+          }
+
+          // Fordel månedligt ekstra afdrag (ruller automatisk videre når et lån indfries)
+          if (extraMonthly > 0) {
+            let remainingExtra = extraMonthly;
+            const order = sortLoanIndicesByStrategy(loans, balances, mIdx, strategy);
+            for (const idx of order) {
+              if (remainingExtra <= 0.005) break;
+              const applied = Math.min(balances[idx], remainingExtra);
+              balances[idx] = Math.max(0, balances[idx] - applied);
+              if (balances[idx] <= 0.005) balances[idx] = 0;
+              remainingExtra -= applied;
+              monthPay += applied;
+            }
+          }
+
+          const newTotal = balances.reduce((s, b) => s + b, 0);
+          monthIndices.push(mIdx);
+          totalSeries.push(newTotal);
+          for (let i = 0; i < loans.length; i++) {
+            perLoanSeries[i].push(balances[i]);
+          }
+
+          if (t === 1) {
+            firstMonthBreakdown = {
+              disbursement: monthDisb,
+              interest: monthInterest,
+              payment: monthPay,
+              netChange: newTotal - prevTotal,
+            };
+          }
+
+          if (newTotal <= 0.005 && payoffMonths === null) {
+            payoffMonths = t;
+            break;
+          }
+        }
+
+        const finalTotal = totalSeries[totalSeries.length - 1] || 0;
+        const cappedAt30Years = loans.length > 0 && payoffMonths === null && finalTotal > 0.005;
+
+        return {
+          initialTotal,
+          monthIndices,
+          totalSeries,
+          perLoanSeries,
+          totalInterest,
+          payoffMonths,
+          payoffMonthIdx: payoffMonths !== null ? baseMonthIdx + payoffMonths : null,
+          cappedAt30Years,
+          firstMonthBreakdown,
+        };
+      }
+
+      // ---------- Standard Eksempeldata & Validering ----------
+
+      function createSampleState() {
+        const now = currentMonthIndex();
+        const suDisbEnd = indexToYm(now + 7);
+        const suRepayStart = indexToYm(now + 26);
+        const privStart = indexToYm(now - 12);
+        const suId = 'loan_su_demo';
+        const privId = 'loan_priv_demo';
+
+        const loans = [
+          {
+            id: suId,
+            type: 'su',
+            name: 'SU-lån',
+            balance: 92400,
+            monthlyDisbursement: 3622,
+            disbursementEndMonth: suDisbEnd,
+            studyRate: 4.0,
+            repaymentStartMonth: suRepayStart,
+            repaymentRate: 3.5,
+            monthlyPayment: 1650,
+            peakBalance: 92400,
+          },
+          {
+            id: privId,
+            type: 'private',
+            name: 'Lån hos bedsteforældre',
+            originalPrincipal: 60000,
+            balance: 42000,
+            annualRate: 0,
+            monthlyPayment: 1500,
+            startMonth: privStart,
+            paymentIntervalMonths: 1,
+          },
+        ];
+
+        const transactions = [
+          {
+            id: 'tx_demo_1',
+            loanId: privId,
+            loanName: 'Lån hos bedsteforældre',
+            amount: 3000,
+            date: todayIsoDate(),
+            note: 'Ekstra indbetaling fra opsparing',
+          },
+        ];
+
+        return {
+          version: 1,
+          demoMode: true,
+          demoDismissed: false,
+          loans,
+          transactions,
+        };
+      }
+
+      function sanitizeLoan(raw) {
+        if (!raw || typeof raw !== 'object') return null;
+        const name = String(raw.name || '').trim().slice(0, 80);
+        if (!name) return null;
+
+        const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim().slice(0, 64) : generateId('loan');
+
+        if (raw.type === 'su') {
+          const balance = Number(raw.balance);
+          const monthlyDisbursement = Number(raw.monthlyDisbursement);
+          const studyRate = Number(raw.studyRate);
+          const repaymentRate = Number(raw.repaymentRate);
+          const monthlyPayment = Number(raw.monthlyPayment);
+          const peakBalance = raw.peakBalance !== undefined && raw.peakBalance !== null && raw.peakBalance !== '' ? Number(raw.peakBalance) : 0;
+
+          if (![balance, monthlyDisbursement, studyRate, repaymentRate, monthlyPayment, peakBalance].every((n) => Number.isFinite(n) && n >= 0)) {
+            return null;
+          }
+          if (ymToIndex(raw.disbursementEndMonth) === null || ymToIndex(raw.repaymentStartMonth) === null) {
+            return null;
+          }
+
+          return {
+            id,
+            type: 'su',
+            name,
+            balance,
+            monthlyDisbursement,
+            disbursementEndMonth: raw.disbursementEndMonth,
+            studyRate,
+            repaymentStartMonth: raw.repaymentStartMonth,
+            repaymentRate,
+            monthlyPayment,
+            peakBalance: Math.max(peakBalance, balance),
+          };
+        }
+
+        if (raw.type === 'private') {
+          const originalPrincipal = Number(raw.originalPrincipal);
+          const balance = Number(raw.balance);
+          const annualRate = Number(raw.annualRate);
+          const monthlyPayment = Number(raw.monthlyPayment);
+          const interval = Math.round(Number(raw.paymentIntervalMonths || 1));
+
+          if (![originalPrincipal, balance, annualRate, monthlyPayment].every((n) => Number.isFinite(n) && n >= 0)) {
+            return null;
+          }
+          if (!Number.isFinite(interval) || interval < 1 || interval > 36) return null;
+          if (ymToIndex(raw.startMonth) === null) return null;
+
+          return {
+            id,
+            type: 'private',
+            name,
+            originalPrincipal: Math.max(originalPrincipal, balance),
+            balance,
+            annualRate,
+            monthlyPayment,
+            startMonth: raw.startMonth,
+            paymentIntervalMonths: interval,
+          };
+        }
+
+        return null;
+      }
+
+      function sanitizeTransaction(raw) {
+        if (!raw || typeof raw !== 'object') return null;
+        const amount = Number(raw.amount);
+        if (!Number.isFinite(amount) || amount <= 0) return null;
+        const loanName = String(raw.loanName || '').trim().slice(0, 80);
+        if (!loanName) return null;
+        const date = typeof raw.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.date) ? raw.date : todayIsoDate();
+        return {
+          id: typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim().slice(0, 64) : generateId('tx'),
+          loanId: typeof raw.loanId === 'string' ? raw.loanId.slice(0, 64) : '',
+          loanName,
+          amount,
+          date,
+          note: String(raw.note || '').trim().slice(0, 80),
+        };
+      }
+
+      function createEmptyState() {
+        return {
+          version: 1,
+          demoMode: false,
+          demoDismissed: true,
+          loans: [],
+          transactions: [],
+        };
+      }
+
+      function cloneState(src) {
+        return {
+          version: 1,
+          demoMode: Boolean(src?.demoMode),
+          demoDismissed: Boolean(src?.demoDismissed),
+          loans: Array.isArray(src?.loans) ? src.loans.map((l) => ({ ...l })) : [],
+          transactions: Array.isArray(src?.transactions) ? src.transactions.map((t) => ({ ...t })) : [],
+        };
+      }
+
+      function createTaggedError(code, message) {
+        const err = new Error(message);
+        err.code = code;
+        return err;
+      }
+
+      function parseServerDocumentData(rawData) {
+        if (!rawData || typeof rawData !== 'object') {
+          throw createTaggedError('SERVER_DATA_CORRUPTED', 'Serverdokumentet har et ugyldigt format.');
+        }
+        if (rawData.loans !== undefined && !Array.isArray(rawData.loans)) {
+          throw createTaggedError('SERVER_DATA_CORRUPTED', 'Serverens låneliste er beskadiget og blev ikke overskrevet.');
+        }
+        if (rawData.transactions !== undefined && !Array.isArray(rawData.transactions)) {
+          throw createTaggedError('SERVER_DATA_CORRUPTED', 'Serverens transaktionsliste er beskadiget og blev ikke overskrevet.');
+        }
+
+        const rawLoans = Array.isArray(rawData.loans) ? rawData.loans : [];
+        const rawTx = Array.isArray(rawData.transactions) ? rawData.transactions : [];
+
+        const loans = rawLoans.map(sanitizeLoan).filter(Boolean);
+        if (loans.length !== rawLoans.length) {
+          throw createTaggedError(
+            'SERVER_DATA_CORRUPTED',
+            'Et eller flere lån på serveren kunne ikke valideres. Skrivning er blokeret for at forhindre datatab.'
+          );
+        }
+
+        const transactions = rawTx.map(sanitizeTransaction).filter(Boolean);
+        if (transactions.length !== rawTx.length) {
+          throw createTaggedError(
+            'SERVER_DATA_CORRUPTED',
+            'En eller flere transaktioner på serveren kunne ikke valideres. Skrivning er blokeret for at forhindre datatab.'
+          );
+        }
+
+        const revision = Number.isInteger(rawData.revision) && rawData.revision >= 0 ? rawData.revision : 0;
+
+        return {
+          state: {
+            version: 1,
+            demoMode: Boolean(rawData.demoMode),
+            demoDismissed: rawData.demoDismissed !== undefined ? Boolean(rawData.demoDismissed) : true,
+            loans,
+            transactions,
+          },
+          revision,
+        };
+      }
+
+      function validateTransactionWrite({
+        serverExists,
+        serverData,
+        expectedUid,
+        currentUid,
+        syncStatus,
+        localRevision,
+        serverDocExists,
+        nextState,
+        allowEmptyOverwrite = false,
+      }) {
+        if (!currentUid || currentUid !== expectedUid) {
+          throw createTaggedError('NOT_AUTHENTICATED', 'Du er ikke længere logget ind med den samme konto.');
+        }
+        if (syncStatus !== 'ready') {
+          throw createTaggedError('SYNC_NOT_READY', 'Serverdata er ikke hentet endnu. Kan ikke gemme.');
+        }
+        if (!nextState || !Array.isArray(nextState.loans) || !Array.isArray(nextState.transactions)) {
+          throw createTaggedError('INVALID_STATE', 'Ugyldig datastruktur ved gemning.');
+        }
+
+        const cleanLoans = nextState.loans.map(sanitizeLoan).filter(Boolean);
+        const cleanTx = nextState.transactions.map(sanitizeTransaction).filter(Boolean);
+        if (cleanLoans.length !== nextState.loans.length || cleanTx.length !== nextState.transactions.length) {
+          throw createTaggedError('INVALID_STATE', 'En eller flere poster fejlede validering før gemning.');
+        }
+
+        if (!serverDocExists && serverExists) {
+          throw createTaggedError(
+            'CONFLICT',
+            'Der findes allerede data på serveren for denne konto. Hent nyeste data før du gemmer.'
+          );
+        }
+        if (serverDocExists && !serverExists) {
+          throw createTaggedError(
+            'CONFLICT',
+            'Serverdokumentet blev ikke fundet længere. Genindlæs før du gemmer for at undgå datatab.'
+          );
+        }
+
+        if (serverExists) {
+          const serverRev =
+            Number.isInteger(serverData?.revision) && serverData.revision >= 0 ? serverData.revision : 0;
+          if (serverRev !== localRevision) {
+            throw createTaggedError(
+              'CONFLICT',
+              'Data på serveren er blevet ændret fra en anden fane eller enhed. Hent nyeste data først.'
+            );
+          }
+          const serverLoans = Array.isArray(serverData?.loans) ? serverData.loans : [];
+          if (serverLoans.length > 0 && cleanLoans.length === 0 && !allowEmptyOverwrite) {
+            throw createTaggedError(
+              'EMPTY_OVERWRITE_BLOCKED',
+              'Sikkerhedsstop: Forsøg på at overskrive eksisterende lån med tom liste blev afvist.'
+            );
+          }
+        }
+
+        return {
+          ok: true,
+          nextRevision: localRevision + 1,
+          cleanState: {
+            version: 1,
+            demoMode: Boolean(nextState.demoMode),
+            demoDismissed: Boolean(nextState.demoDismissed),
+            loans: cleanLoans,
+            transactions: cleanTx,
+          },
+        };
+      }
+
+      function readLegacyLocalData() {
+        try {
+          const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+          if (!raw) return null;
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== 'object' || parsed.demoMode) return null;
+          if (!Array.isArray(parsed.loans) || parsed.loans.length === 0) return null;
+          const loans = parsed.loans.map(sanitizeLoan).filter(Boolean);
+          if (loans.length === 0) return null;
+          const transactions = Array.isArray(parsed.transactions)
+            ? parsed.transactions.map(sanitizeTransaction).filter(Boolean)
+            : [];
+          return {
+            version: 1,
+            demoMode: false,
+            demoDismissed: true,
+            loans,
+            transactions,
+          };
+        } catch {
+          return null;
+        }
+      }
+
+      function withTimeout(promise, ms, timeoutMessage) {
+        let timerId = null;
+        const timeoutPromise = new Promise((_, reject) => {
+          timerId = setTimeout(() => reject(createTaggedError('timeout', timeoutMessage)), ms);
+        });
+        return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timerId));
+      }
+
+      function formatAuthErrorDa(err) {
+        const code = err?.code || '';
+        switch (code) {
+          case 'auth/invalid-credential':
+          case 'auth/wrong-password':
+          case 'auth/user-not-found':
+            return 'Forkert e-mailadresse eller adgangskode.';
+          case 'auth/email-already-in-use':
+            return 'Der findes allerede en konto med denne e-mailadresse.';
+          case 'auth/weak-password':
+            return 'Adgangskoden skal være på mindst 6 tegn.';
+          case 'auth/invalid-email':
+            return 'Indtast en gyldig e-mailadresse.';
+          case 'auth/too-many-requests':
+            return 'For mange login-forsøg. Vent et øjeblik og prøv igen.';
+          case 'auth/network-request-failed':
+            return 'Netværksfejl. Tjek din internetforbindelse og prøv igen.';
+          case 'auth/operation-not-allowed':
+            return 'Denne login-metode er ikke aktiveret i Firebase Console (Authentication → Sign-in method).';
+          case 'auth/unauthorized-domain':
+            return 'Dette domæne er ikke godkendt i Firebase Console (Authentication → Settings → Authorized domains).';
+          case 'auth/popup-closed-by-user':
+            return 'Login-vinduet blev lukket før login var færdigt.';
+          case 'auth/popup-blocked':
+            return 'Browseren blokerede pop-up vinduet. Tillad pop-ups og prøv igen.';
+          default:
+            return err?.message ? `Login fejlede (${code || 'fejl'}): ${err.message}` : 'Login fejlede. Prøv igen.';
+        }
+      }
+
+      function formatFirestoreErrorDa(err) {
+        const code = err?.code || '';
+        switch (code) {
+          case 'unavailable':
+            return 'Firestore kan ikke nås (offline eller ustabil forbindelse). Tjek dit internet og prøv igen.';
+          case 'timeout':
+            return 'Forbindelsen til Firestore tog for lang tid. Tjek netværket og prøv igen.';
+          case 'permission-denied':
+            return 'Adgang nægtet af Firestore Security Rules. Kontrollér at Firestore-reglerne tillader brugerens eget dokument (users/{uid}).';
+          case 'failed-precondition':
+            return 'Firestore er endnu ikke oprettet eller klar i Firebase-projektet (tempco2fugt).';
+          case 'unauthenticated':
+            return 'Din login-session er udløbet. Log ud og log ind igen.';
+          case 'CONFLICT':
+          case 'EMPTY_OVERWRITE_BLOCKED':
+          case 'SERVER_DATA_CORRUPTED':
+          case 'SYNC_NOT_READY':
+          case 'NOT_AUTHENTICATED':
+          case 'INVALID_STATE':
+            return err.message;
+          default:
+            return err?.message ? `Serverfejl (${code || 'ukendt'}): ${err.message}` : 'Ukendt fejl ved kommunikation med Firestore.';
+        }
+      }
+
+      // ---------- Applikationstilstand, Auth & Firestore Sync State ----------
+
+      let state = createEmptyState();
+      const syncState = {
+        status: 'signed_out', // 'signed_out' | 'loading' | 'error' | 'ready'
+        loadedUid: null,
+        localRevision: 0,
+        serverDocExists: false,
+        isSaving: false,
+        hasConflict: false,
+        lastSyncedAt: null,
+        legacyCandidate: null,
+        legacyDismissed: false,
+        authGeneration: 0,
+      };
+      let writeQueue = Promise.resolve();
+
+      const uiState = {
+        authMode: 'signin', // 'signin' | 'signup'
+        chartMode: 'total', // 'total' | 'loans'
+        simExtraMonthly: 0,
+        simLumpSum: 0,
+        simStrategy: 'avalanche',
+        suHelperYears: 10,
+        loanModalType: 'su',
+        pendingDeleteLoanId: null,
+        pendingConfirmAction: null,
+      };
+
+      let debtChartInstance = null;
+      let toastTimer = null;
+
+      // ---------- DOM-referencer ----------
+
+      const el = {
+        authGate: document.getElementById('authGate'),
+        authLoadingView: document.getElementById('authLoadingView'),
+        authFormView: document.getElementById('authFormView'),
+        fileProtocolWarning: document.getElementById('fileProtocolWarning'),
+        authTabSignIn: document.getElementById('authTabSignIn'),
+        authTabSignUp: document.getElementById('authTabSignUp'),
+        authForm: document.getElementById('authForm'),
+        authEmailInput: document.getElementById('authEmailInput'),
+        authPasswordInput: document.getElementById('authPasswordInput'),
+        authPasswordConfirmWrap: document.getElementById('authPasswordConfirmWrap'),
+        authPasswordConfirmInput: document.getElementById('authPasswordConfirmInput'),
+        authResetBtn: document.getElementById('authResetBtn'),
+        authErrorBox: document.getElementById('authErrorBox'),
+        authInfoBox: document.getElementById('authInfoBox'),
+        authSubmitBtn: document.getElementById('authSubmitBtn'),
+        googleSignInBtn: document.getElementById('googleSignInBtn'),
+
+        syncGate: document.getElementById('syncGate'),
+        syncLoadingView: document.getElementById('syncLoadingView'),
+        syncLoadingEmail: document.getElementById('syncLoadingEmail'),
+        syncCancelSignOutBtn: document.getElementById('syncCancelSignOutBtn'),
+        syncErrorView: document.getElementById('syncErrorView'),
+        syncErrorDetail: document.getElementById('syncErrorDetail'),
+        retrySyncBtn: document.getElementById('retrySyncBtn'),
+        syncErrorSignOutBtn: document.getElementById('syncErrorSignOutBtn'),
+
+        appShell: document.getElementById('appShell'),
+        conflictBanner: document.getElementById('conflictBanner'),
+        resolveConflictBtn: document.getElementById('resolveConflictBtn'),
+        legacyImportBanner: document.getElementById('legacyImportBanner'),
+        legacyImportText: document.getElementById('legacyImportText'),
+        importLegacyBtn: document.getElementById('importLegacyBtn'),
+        dismissLegacyBtn: document.getElementById('dismissLegacyBtn'),
+        syncStatusBadge: document.getElementById('syncStatusBadge'),
+        refreshServerBtn: document.getElementById('refreshServerBtn'),
+        userAccountEmail: document.getElementById('userAccountEmail'),
+        signOutBtn: document.getElementById('signOutBtn'),
+
+        demoBanner: document.getElementById('demoBanner'),
+        clearAllDataBtn: document.getElementById('clearAllDataBtn'),
+        dismissDemoBtn: document.getElementById('dismissDemoBtn'),
+        headerSubtitle: document.getElementById('headerSubtitle'),
+        openAddLoanBtn: document.getElementById('openAddLoanBtn'),
+        exportJsonBtn: document.getElementById('exportJsonBtn'),
+        importJsonBtn: document.getElementById('importJsonBtn'),
+        importFileInput: document.getElementById('importFileInput'),
+
+        kpiTotalDebt: document.getElementById('kpiTotalDebt'),
+        kpiTotalDebtSub: document.getElementById('kpiTotalDebtSub'),
+        kpiNetChange: document.getElementById('kpiNetChange'),
+        kpiNetChangeSub: document.getElementById('kpiNetChangeSub'),
+        kpiDebtFreeDate: document.getElementById('kpiDebtFreeDate'),
+        kpiDebtFreeSub: document.getElementById('kpiDebtFreeSub'),
+        kpiTotalInterest: document.getElementById('kpiTotalInterest'),
+        kpiTotalInterestSub: document.getElementById('kpiTotalInterestSub'),
+
+        chartModeTotalBtn: document.getElementById('chartModeTotalBtn'),
+        chartModeLoansBtn: document.getElementById('chartModeLoansBtn'),
+        debtChartCanvas: document.getElementById('debtChart'),
+        chartFallback: document.getElementById('chartFallback'),
+        chartCapWarning: document.getElementById('chartCapWarning'),
+
+        resetSimBtn: document.getElementById('resetSimBtn'),
+        simExtraMonthlyInput: document.getElementById('simExtraMonthlyInput'),
+        simExtraMonthlyRange: document.getElementById('simExtraMonthlyRange'),
+        simLumpSumInput: document.getElementById('simLumpSumInput'),
+        simLumpSumRange: document.getElementById('simLumpSumRange'),
+        strategyAvalancheBtn: document.getElementById('strategyAvalancheBtn'),
+        strategySnowballBtn: document.getElementById('strategySnowballBtn'),
+        simImpactCard: document.getElementById('simImpactCard'),
+        simDebtFreeDate: document.getElementById('simDebtFreeDate'),
+        simTimeSaved: document.getElementById('simTimeSaved'),
+        simInterestSaved: document.getElementById('simInterestSaved'),
+
+        loanCountBadge: document.getElementById('loanCountBadge'),
+        loadSampleBtn: document.getElementById('loadSampleBtn'),
+        loansGrid: document.getElementById('loansGrid'),
+        emptyLoansState: document.getElementById('emptyLoansState'),
+        emptyAddLoanBtn: document.getElementById('emptyAddLoanBtn'),
+        emptySampleBtn: document.getElementById('emptySampleBtn'),
+
+        totalExtraPaidBadge: document.getElementById('totalExtraPaidBadge'),
+        transactionEmptyState: document.getElementById('transactionEmptyState'),
+        transactionTableWrapper: document.getElementById('transactionTableWrapper'),
+        transactionListBody: document.getElementById('transactionListBody'),
+
+        loanModal: document.getElementById('loanModal'),
+        loanModalTitle: document.getElementById('loanModalTitle'),
+        closeLoanModalBtn: document.getElementById('closeLoanModalBtn'),
+        cancelLoanModalBtn: document.getElementById('cancelLoanModalBtn'),
+        loanForm: document.getElementById('loanForm'),
+        loanFormSubmitBtn: document.getElementById('loanFormSubmitBtn'),
+        loanIdField: document.getElementById('loanIdField'),
+        typeSuBtn: document.getElementById('typeSuBtn'),
+        typePrivateBtn: document.getElementById('typePrivateBtn'),
+        loanNameInput: document.getElementById('loanNameInput'),
+        suFields: document.getElementById('suFields'),
+        suBalanceInput: document.getElementById('suBalanceInput'),
+        suDisbursementInput: document.getElementById('suDisbursementInput'),
+        suDisbursementEndInput: document.getElementById('suDisbursementEndInput'),
+        suStudyRateInput: document.getElementById('suStudyRateInput'),
+        suRepayStartInput: document.getElementById('suRepayStartInput'),
+        suRepayRateInput: document.getElementById('suRepayRateInput'),
+        suPaymentInput: document.getElementById('suPaymentInput'),
+        suGraceInfo: document.getElementById('suGraceInfo'),
+        suMinPaymentSummary: document.getElementById('suMinPaymentSummary'),
+        applySuMinPaymentBtn: document.getElementById('applySuMinPaymentBtn'),
+        suInterestWarning: document.getElementById('suInterestWarning'),
+        suPeakBalanceInput: document.getElementById('suPeakBalanceInput'),
+        privateFields: document.getElementById('privateFields'),
+        privPrincipalInput: document.getElementById('privPrincipalInput'),
+        privBalanceInput: document.getElementById('privBalanceInput'),
+        privRateInput: document.getElementById('privRateInput'),
+        privStartInput: document.getElementById('privStartInput'),
+        privFrequencySelect: document.getElementById('privFrequencySelect'),
+        privCustomIntervalWrap: document.getElementById('privCustomIntervalWrap'),
+        privCustomIntervalInput: document.getElementById('privCustomIntervalInput'),
+        privPaymentLabel: document.getElementById('privPaymentLabel'),
+        privPaymentInput: document.getElementById('privPaymentInput'),
+        privPayoffPreview: document.getElementById('privPayoffPreview'),
+        loanFormError: document.getElementById('loanFormError'),
+        deleteLoanBtn: document.getElementById('deleteLoanBtn'),
+        confirmDeleteLoanBtn: document.getElementById('confirmDeleteLoanBtn'),
+
+        paymentModal: document.getElementById('paymentModal'),
+        paymentModalLoanName: document.getElementById('paymentModalLoanName'),
+        closePaymentModalBtn: document.getElementById('closePaymentModalBtn'),
+        cancelPaymentModalBtn: document.getElementById('cancelPaymentModalBtn'),
+        paymentForm: document.getElementById('paymentForm'),
+        paymentFormSubmitBtn: document.getElementById('paymentFormSubmitBtn'),
+        paymentLoanIdField: document.getElementById('paymentLoanIdField'),
+        paymentCurrentBalance: document.getElementById('paymentCurrentBalance'),
+        paymentAmountInput: document.getElementById('paymentAmountInput'),
+        quickPayAllBtn: document.getElementById('quickPayAllBtn'),
+        paymentDateInput: document.getElementById('paymentDateInput'),
+        paymentNoteInput: document.getElementById('paymentNoteInput'),
+        paymentNewBalancePreview: document.getElementById('paymentNewBalancePreview'),
+        paymentFormError: document.getElementById('paymentFormError'),
+
+        confirmModal: document.getElementById('confirmModal'),
+        confirmModalTitle: document.getElementById('confirmModalTitle'),
+        confirmModalMessage: document.getElementById('confirmModalMessage'),
+        confirmModalCancelBtn: document.getElementById('confirmModalCancelBtn'),
+        confirmModalConfirmBtn: document.getElementById('confirmModalConfirmBtn'),
+
+        toast: document.getElementById('toast'),
+        toastMessage: document.getElementById('toastMessage'),
+      };
+
+      function refreshIcons() {
+        if (window.lucide) {
+          window.lucide.createIcons();
+        }
+      }
+
+      function showToast(msg, isError = false) {
+        el.toastMessage.textContent = msg;
+        const icon = el.toast.querySelector('svg, i');
+        if (icon) {
+          icon.classList.toggle('text-[#34D399]', !isError);
+          icon.classList.toggle('text-red-400', isError);
+        }
+        el.toast.classList.remove('hidden');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.toast.classList.add('hidden'), 3800);
+      }
+
+      // ---------- Auth UI & Firestore Server-Sync ----------
+
+      function setAuthMode(mode) {
+        uiState.authMode = mode === 'signup' ? 'signup' : 'signin';
+        const isSignUp = uiState.authMode === 'signup';
+        el.authTabSignIn.className = !isSignUp
+          ? 'py-2 px-3 rounded-lg text-sm font-medium transition bg-white text-[#111827] shadow-sm'
+          : 'py-2 px-3 rounded-lg text-sm font-medium transition text-[#6B7280] hover:text-[#111827]';
+        el.authTabSignUp.className = isSignUp
+          ? 'py-2 px-3 rounded-lg text-sm font-medium transition bg-white text-[#111827] shadow-sm'
+          : 'py-2 px-3 rounded-lg text-sm font-medium transition text-[#6B7280] hover:text-[#111827]';
+        el.authPasswordConfirmWrap.classList.toggle('hidden', !isSignUp);
+        el.authResetBtn.classList.toggle('hidden', isSignUp);
+        el.authPasswordInput.setAttribute('autocomplete', isSignUp ? 'new-password' : 'current-password');
+        el.authSubmitBtn.textContent = isSignUp ? 'Opret konto' : 'Log ind';
+        el.authErrorBox.classList.add('hidden');
+        el.authInfoBox.classList.add('hidden');
+      }
+
+      function showAuthGate(showLoadingOnly = false) {
+        el.syncGate.classList.add('hidden');
+        el.appShell.classList.add('hidden');
+        el.authGate.classList.remove('hidden');
+        el.authLoadingView.classList.toggle('hidden', !showLoadingOnly);
+        el.authFormView.classList.toggle('hidden', showLoadingOnly);
+        el.fileProtocolWarning.classList.toggle('hidden', window.location.protocol !== 'file:');
+        refreshIcons();
+      }
+
+      function showSyncGate(mode, errorMsg = '') {
+        el.authGate.classList.add('hidden');
+        el.appShell.classList.add('hidden');
+        el.syncGate.classList.remove('hidden');
+        const isErr = mode === 'error';
+        el.syncLoadingView.classList.toggle('hidden', isErr);
+        el.syncErrorView.classList.toggle('hidden', !isErr);
+        if (isErr) {
+          el.syncErrorDetail.textContent = errorMsg;
+        }
+        refreshIcons();
+      }
+
+      function renderSyncBadge() {
+        if (syncState.isSaving) {
+          el.syncStatusBadge.className =
+            'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A]';
+          el.syncStatusBadge.innerHTML =
+            '<span class="w-1.5 h-1.5 rounded-full bg-[#D97706] animate-pulse"></span><span>Gemmer i Firestore…</span>';
+          return;
+        }
+        if (syncState.hasConflict) {
+          el.syncStatusBadge.className =
+            'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200';
+          el.syncStatusBadge.innerHTML =
+            '<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span><span>Konflikt — opdater fra server</span>';
+          return;
+        }
+        const timeStr = syncState.lastSyncedAt
+          ? syncState.lastSyncedAt.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })
+          : '';
+        const revLabel = syncState.localRevision > 0 ? ` · rev ${syncState.localRevision}` : '';
+        el.syncStatusBadge.className =
+          'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[#ECFDF5] text-[#065F46] border border-[#A7F3D0]';
+        el.syncStatusBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-[#059669]"></span><span>Gemt i Firestore${timeStr ? ` (${escapeHtml(timeStr)})` : ''}</span>`;
+        el.syncStatusBadge.title = `Cloud Firestore${revLabel}`;
+      }
+
+      function resetRuntimeSession() {
+        state = createEmptyState();
+        syncState.status = 'signed_out';
+        syncState.loadedUid = null;
+        syncState.localRevision = 0;
+        syncState.serverDocExists = false;
+        syncState.isSaving = false;
+        syncState.hasConflict = false;
+        syncState.lastSyncedAt = null;
+        syncState.legacyCandidate = null;
+        syncState.legacyDismissed = false;
+
+        uiState.simExtraMonthly = 0;
+        uiState.simLumpSum = 0;
+        uiState.pendingDeleteLoanId = null;
+        uiState.pendingConfirmAction = null;
+        el.simExtraMonthlyInput.value = '0';
+        el.simExtraMonthlyRange.value = '0';
+        el.simLumpSumInput.value = '0';
+        el.simLumpSumRange.value = '0';
+
+        closeLoanModal();
+        closePaymentModal();
+        closeConfirmModal();
+
+        el.loansGrid.innerHTML = '';
+        el.transactionListBody.innerHTML = '';
+        if (debtChartInstance) {
+          debtChartInstance.destroy();
+          debtChartInstance = null;
+        }
+      }
+
+      async function loadUserStateFromServer(user) {
+        if (!user) return;
+        const myGen = syncState.authGeneration;
+        const targetUid = user.uid;
+
+        syncState.status = 'loading';
+        syncState.loadedUid = null;
+        syncState.hasConflict = false;
+        el.syncLoadingEmail.textContent = user.email || user.displayName || '';
+        showSyncGate('loading');
+
+        try {
+          const docRef = doc(db, 'users', targetUid);
+          const snap = await withTimeout(
+            getDocFromServer(docRef),
+            SERVER_FETCH_TIMEOUT_MS,
+            'Timeout ved hentning af data fra Firestore.'
+          );
+
+          // Ignorer svar hvis brugeren har logget ud eller startet en ny session imens
+          if (myGen !== syncState.authGeneration || auth.currentUser?.uid !== targetUid) return;
+
+          if (snap.exists()) {
+            const parsed = parseServerDocumentData(snap.data());
+            state = parsed.state;
+            syncState.localRevision = parsed.revision;
+            syncState.serverDocExists = true;
+            syncState.legacyCandidate = null;
+          } else {
+            // Ny konto uden dokument på serveren: skriv ALDRIG standarddata automatisk
+            state = createEmptyState();
+            syncState.localRevision = 0;
+            syncState.serverDocExists = false;
+            syncState.legacyCandidate = syncState.legacyDismissed ? null : readLegacyLocalData();
+          }
+
+          syncState.loadedUid = targetUid;
+          syncState.status = 'ready';
+          syncState.lastSyncedAt = new Date();
+
+          el.userAccountEmail.textContent = user.email || user.displayName || 'Bruger';
+          el.syncGate.classList.add('hidden');
+          el.authGate.classList.add('hidden');
+          el.appShell.classList.remove('hidden');
+          renderApp();
+        } catch (err) {
+          if (myGen !== syncState.authGeneration || auth.currentUser?.uid !== targetUid) return;
+          // Lås appen ved læsefejl så standarddata aldrig kan overskrive serverdata
+          state = createEmptyState();
+          syncState.status = 'error';
+          syncState.loadedUid = null;
+          showSyncGate('error', formatFirestoreErrorDa(err));
+        }
+      }
+
+      function commitStateChange(candidateState, options = {}) {
+        const expectedUid = syncState.loadedUid;
+        if (syncState.status !== 'ready' || !expectedUid || auth.currentUser?.uid !== expectedUid) {
+          return Promise.reject(createTaggedError('SYNC_NOT_READY', 'Serverdata er ikke klar. Gemning afvist.'));
+        }
+        if (syncState.hasConflict) {
+          return Promise.reject(
+            createTaggedError('CONFLICT', 'Hent først de nyeste data fra serveren før du gemmer nye ændringer.')
+          );
+        }
+
+        const task = writeQueue.then(async () => {
+          const activeUid = auth.currentUser?.uid;
+          if (syncState.status !== 'ready' || !activeUid || activeUid !== expectedUid) {
+            throw createTaggedError('NOT_AUTHENTICATED', 'Sessionen ændrede sig før gemning.');
+          }
+
+          syncState.isSaving = true;
+          renderSyncBadge();
+
+          try {
+            const docRef = doc(db, 'users', activeUid);
+            const result = await runTransaction(db, async (tx) => {
+              const serverSnap = await tx.get(docRef);
+              const validated = validateTransactionWrite({
+                serverExists: serverSnap.exists(),
+                serverData: serverSnap.exists() ? serverSnap.data() : null,
+                expectedUid,
+                currentUid: auth.currentUser?.uid,
+                syncStatus: syncState.status,
+                localRevision: syncState.localRevision,
+                serverDocExists: syncState.serverDocExists,
+                nextState: candidateState,
+                allowEmptyOverwrite: Boolean(options.allowEmptyOverwrite),
+              });
+
+              tx.set(docRef, {
+                ...validated.cleanState,
+                revision: validated.nextRevision,
+                updatedAt: serverTimestamp(),
+                lastAction: String(options.reason || 'update').slice(0, 40),
+              });
+
+              return validated;
+            });
+
+            state = result.cleanState;
+            syncState.localRevision = result.nextRevision;
+            syncState.serverDocExists = true;
+            syncState.lastSyncedAt = new Date();
+            syncState.hasConflict = false;
+            renderApp();
+            return result.cleanState;
+          } catch (err) {
+            if (err?.code === 'CONFLICT') {
+              syncState.hasConflict = true;
+              renderApp();
+            }
+            throw err;
+          } finally {
+            syncState.isSaving = false;
+            renderSyncBadge();
+          }
+        });
+
+        // Hold køen i live selvom én skrivning fejler
+        writeQueue = task.catch(() => {});
+        return task;
+      }
+
+      // ---------- Bekræftelsesmodal ----------
+
+      function openConfirmModal({ title, message, confirmText = 'Bekræft', onConfirm }) {
+        el.confirmModalTitle.textContent = title;
+        el.confirmModalMessage.textContent = message;
+        el.confirmModalConfirmBtn.textContent = confirmText;
+        el.confirmModalConfirmBtn.disabled = false;
+        uiState.pendingConfirmAction = onConfirm;
+        el.confirmModal.classList.remove('hidden');
+      }
+
+      function closeConfirmModal() {
+        el.confirmModal.classList.add('hidden');
+        uiState.pendingConfirmAction = null;
+      }
+
+      // ---------- Render: Header, KPI'er, Kort, Historik & Graf ----------
+
+      function renderApp() {
+        const baseMonthIdx = currentMonthIndex();
+        const baseline = simulatePortfolio(state.loans, baseMonthIdx);
+        const hasSimAdjustments = uiState.simExtraMonthly > 0 || uiState.simLumpSum > 0;
+        const simulated = hasSimAdjustments
+          ? simulatePortfolio(state.loans, baseMonthIdx, {
+              extraMonthly: uiState.simExtraMonthly,
+              lumpSumNow: uiState.simLumpSum,
+              strategy: uiState.simStrategy,
+            })
+          : baseline;
+
+        // Konflikt & legacy-migreringsbannere
+        el.conflictBanner.classList.toggle('hidden', !syncState.hasConflict);
+        if (!syncState.serverDocExists && syncState.legacyCandidate && !syncState.legacyDismissed) {
+          const count = syncState.legacyCandidate.loans.length;
+          el.legacyImportText.textContent = `Der blev fundet ${count} eksisterende ${count === 1 ? 'lån' : 'lån'} gemt lokalt i denne browser. Vil du overføre dem til din Firestore-konto?`;
+          el.legacyImportBanner.classList.remove('hidden');
+        } else {
+          el.legacyImportBanner.classList.add('hidden');
+        }
+
+        renderSyncBadge();
+
+        // Demo banner
+        if (state.demoMode && !state.demoDismissed && state.loans.length > 0) {
+          el.demoBanner.classList.remove('hidden');
+        } else {
+          el.demoBanner.classList.add('hidden');
+        }
+
+        // Header subtitle
+        const todayStr = formatFullDateDa(getTodayDate());
+        let goalText = 'Tilføj et lån for at beregne mål';
+        if (state.loans.length > 0) {
+          if (baseline.initialTotal <= 0.005) {
+            goalText = 'Gældfri nu';
+          } else if (baseline.cappedAt30Years) {
+            goalText = 'Mål: > 30 år med nuværende ydelser';
+          } else {
+            goalText = `Mål: Gældfri ${formatMonthShortDa(baseline.payoffMonthIdx)}`;
+          }
+        }
+        el.headerSubtitle.textContent = `I dag: ${todayStr} · ${goalText}`;
+
+        // KPI 1: Samlet gæld lige nu
+        const activeCount = state.loans.filter((l) => (l.balance || 0) > 0.005).length;
+        el.kpiTotalDebt.textContent = formatCurrency(baseline.initialTotal);
+        if (state.loans.length === 0) {
+          el.kpiTotalDebtSub.textContent = 'Ingen registrerede lån';
+        } else if (activeCount === 0) {
+          el.kpiTotalDebtSub.textContent = `Alle ${state.loans.length} lån er indfriet`;
+        } else {
+          el.kpiTotalDebtSub.textContent = `Fordelt på ${activeCount} ${activeCount === 1 ? 'aktivt lån' : 'aktive lån'}`;
+        }
+
+        // KPI 2: Månedlig nettoændring
+        const bd = baseline.firstMonthBreakdown;
+        el.kpiNetChange.textContent = `${formatSignedCurrency(bd.netChange)}/md.`;
+        el.kpiNetChange.classList.remove('text-[#065F46]', 'text-[#B45309]', 'text-[#111827]');
+        if (bd.netChange < -0.5) {
+          el.kpiNetChange.classList.add('text-[#065F46]');
+        } else if (bd.netChange > 0.5) {
+          el.kpiNetChange.classList.add('text-[#B45309]');
+        } else {
+          el.kpiNetChange.classList.add('text-[#111827]');
+        }
+
+        if (state.loans.length === 0 || activeCount === 0) {
+          el.kpiNetChangeSub.textContent = 'Ingen månedlige bevægelser';
+        } else {
+          const parts = [];
+          if (bd.disbursement > 0.5) parts.push(`+${formatCurrency(bd.disbursement)} udbet.`);
+          if (bd.interest > 0.5) parts.push(`+${formatCurrency(bd.interest)} rente`);
+          if (bd.payment > 0.5) parts.push(`\u2212${formatCurrency(bd.payment)} afdrag`);
+          el.kpiNetChangeSub.textContent = parts.length > 0 ? parts.join(' · ') : 'Ingen bevægelse næste måned';
+        }
+
+        // KPI 3: Forventet gældfri dato
+        if (state.loans.length === 0) {
+          el.kpiDebtFreeDate.textContent = '—';
+          el.kpiDebtFreeSub.textContent = 'Ingen lån tilføjet';
+        } else if (baseline.initialTotal <= 0.005) {
+          el.kpiDebtFreeDate.textContent = 'Gældfri nu!';
+          el.kpiDebtFreeSub.textContent = '0 måneder tilbage';
+        } else if (baseline.cappedAt30Years) {
+          el.kpiDebtFreeDate.textContent = '> 30 år';
+          el.kpiDebtFreeSub.textContent = 'Øg månedlige ydelser for indfrielse';
+        } else {
+          el.kpiDebtFreeDate.textContent = formatMonthShortDa(baseline.payoffMonthIdx);
+          el.kpiDebtFreeSub.textContent = `Om ${baseline.payoffMonths} ${baseline.payoffMonths === 1 ? 'md.' : 'mdr.'} (${formatDurationDa(baseline.payoffMonths)})`;
+        }
+
+        // KPI 4: Samlede renteomkostninger
+        el.kpiTotalInterest.textContent = formatCurrency(baseline.totalInterest);
+        if (state.loans.length === 0) {
+          el.kpiTotalInterestSub.textContent = 'Ingen beregnede renter';
+        } else if (baseline.cappedAt30Years) {
+          el.kpiTotalInterestSub.textContent = 'Estimerede renter over 30 år';
+        } else {
+          el.kpiTotalInterestSub.textContent = 'Estimerede renter fra i dag til 0 kr.';
+        }
+
+        // Simulator Impact
+        renderSimulatorPanel(baseline, simulated, hasSimAdjustments);
+
+        // Chart
+        renderChart(baseline, simulated, hasSimAdjustments, baseMonthIdx);
+
+        // Loan Cards
+        renderLoansGrid(baseMonthIdx);
+
+        // Transaction History
+        renderTransactions();
+
+        refreshIcons();
+      }
+
+      function renderSimulatorPanel(baseline, simulated, hasSimAdjustments) {
+        el.resetSimBtn.classList.toggle('hidden', !hasSimAdjustments);
+
+        const isAvalanche = uiState.simStrategy === 'avalanche';
+        el.strategyAvalancheBtn.className = isAvalanche
+          ? 'px-2.5 py-1.5 text-xs font-medium rounded-md bg-white text-[#111827] shadow-sm transition'
+          : 'px-2.5 py-1.5 text-xs font-medium rounded-md text-[#6B7280] hover:text-[#111827] transition';
+        el.strategySnowballBtn.className = !isAvalanche
+          ? 'px-2.5 py-1.5 text-xs font-medium rounded-md bg-white text-[#111827] shadow-sm transition'
+          : 'px-2.5 py-1.5 text-xs font-medium rounded-md text-[#6B7280] hover:text-[#111827] transition';
+
+        if (!hasSimAdjustments || state.loans.length === 0 || baseline.initialTotal <= 0.005) {
+          el.simImpactCard.className = 'rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4 space-y-2.5 transition-colors';
+          el.simDebtFreeDate.textContent =
+            state.loans.length === 0 ? '—' : baseline.initialTotal <= 0.005 ? 'Gældfri nu' : baseline.cappedAt30Years ? '> 30 år' : formatMonthShortDa(baseline.payoffMonthIdx);
+          el.simTimeSaved.textContent = '0 mdr.';
+          el.simInterestSaved.textContent = '0 kr.';
+          el.simTimeSaved.className = 'font-semibold text-[#111827] tabular-nums';
+          el.simInterestSaved.className = 'font-semibold text-[#111827] tabular-nums';
+          return;
+        }
+
+        el.simImpactCard.className = 'rounded-xl border border-[#A7F3D0] bg-[#ECFDF5] p-4 space-y-2.5 transition-colors';
+
+        if (simulated.initialTotal <= 0.005) {
+          el.simDebtFreeDate.textContent = 'Gældfri nu!';
+        } else if (simulated.cappedAt30Years) {
+          el.simDebtFreeDate.textContent = '> 30 år';
+        } else {
+          el.simDebtFreeDate.textContent = formatMonthShortDa(simulated.payoffMonthIdx);
+        }
+
+        const baseMonths = baseline.cappedAt30Years ? MAX_MONTHS : (baseline.payoffMonths || 0);
+        const simMonths = simulated.cappedAt30Years ? MAX_MONTHS : (simulated.payoffMonths || 0);
+        const savedMonths = Math.max(0, baseMonths - simMonths);
+        const savedInterest = Math.max(0, baseline.totalInterest - simulated.totalInterest);
+
+        el.simTimeSaved.textContent = baseline.cappedAt30Years && !simulated.cappedAt30Years
+          ? `Mindst ${formatDurationDa(savedMonths)}`
+          : formatDurationDa(savedMonths);
+        el.simInterestSaved.textContent = formatCurrency(savedInterest);
+        el.simTimeSaved.className = 'font-semibold text-[#065F46] tabular-nums';
+        el.simInterestSaved.className = 'font-semibold text-[#065F46] tabular-nums';
+      }
+
+      function renderChart(baseline, simulated, hasSimAdjustments, baseMonthIdx) {
+        const isTotalMode = uiState.chartMode === 'total';
+        el.chartModeTotalBtn.className = isTotalMode
+          ? 'px-3 py-1.5 text-xs font-medium rounded-md bg-white text-[#111827] shadow-sm transition'
+          : 'px-3 py-1.5 text-xs font-medium rounded-md text-[#6B7280] hover:text-[#111827] transition';
+        el.chartModeLoansBtn.className = !isTotalMode
+          ? 'px-3 py-1.5 text-xs font-medium rounded-md bg-white text-[#111827] shadow-sm transition'
+          : 'px-3 py-1.5 text-xs font-medium rounded-md text-[#6B7280] hover:text-[#111827] transition';
+
+        el.chartCapWarning.classList.toggle('hidden', !baseline.cappedAt30Years);
+
+        if (state.loans.length === 0) {
+          el.debtChartCanvas.classList.add('hidden');
+          el.chartFallback.classList.remove('hidden');
+          return;
+        }
+
+        el.debtChartCanvas.classList.remove('hidden');
+        el.chartFallback.classList.add('hidden');
+
+        if (!window.Chart) return;
+
+        const maxLen = Math.max(baseline.monthIndices.length, simulated.monthIndices.length);
+        const labels = [];
+        for (let i = 0; i < maxLen; i++) {
+          labels.push(i === 0 ? 'I dag' : formatMonthShortDa(baseMonthIdx + i));
+        }
+
+        const datasets = [];
+        if (isTotalMode) {
+          const baseAligned = labels.map((_, i) => (i < baseline.totalSeries.length ? Math.round(baseline.totalSeries[i]) : 0));
+          datasets.push({
+            label: 'Nuværende plan',
+            data: baseAligned,
+            borderColor: '#4B5563',
+            backgroundColor: hasSimAdjustments ? 'rgba(75, 85, 99, 0.05)' : 'rgba(17, 24, 39, 0.08)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.2,
+            pointRadius: 0,
+            pointHoverRadius: 5,
+          });
+
+          if (hasSimAdjustments) {
+            const simAligned = labels.map((_, i) => (i < simulated.totalSeries.length ? Math.round(simulated.totalSeries[i]) : 0));
+            datasets.push({
+              label: 'Simuleret plan (Hvad nu hvis?)',
+              data: simAligned,
+              borderColor: '#059669',
+              backgroundColor: 'rgba(5, 150, 105, 0.12)',
+              borderWidth: 2.5,
+              borderDash: [5, 4],
+              fill: true,
+              tension: 0.2,
+              pointRadius: 0,
+              pointHoverRadius: 5,
+            });
+          }
+        } else {
+          const activeSource = hasSimAdjustments ? simulated : baseline;
+          state.loans.forEach((loan, idx) => {
+            const series = activeSource.perLoanSeries[idx] || [];
+            const aligned = labels.map((_, i) => (i < series.length ? Math.round(series[i]) : 0));
+            const color = LOAN_PALETTE[idx % LOAN_PALETTE.length];
+            datasets.push({
+              label: loan.name + (hasSimAdjustments ? ' (simuleret)' : ''),
+              data: aligned,
+              borderColor: color,
+              backgroundColor: 'transparent',
+              borderWidth: 2,
+              fill: false,
+              tension: 0.2,
+              pointRadius: 0,
+              pointHoverRadius: 5,
+            });
+          });
+        }
+
+        if (debtChartInstance) {
+          debtChartInstance.data.labels = labels;
+          debtChartInstance.data.datasets = datasets;
+          debtChartInstance.resize();
+          debtChartInstance.update('none');
+          return;
+        }
+
+        debtChartInstance = new Chart(el.debtChartCanvas.getContext('2d'), {
+          type: 'line',
+          data: { labels, datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: {
+                display: true,
+                position: 'bottom',
+                labels: {
+                  usePointStyle: true,
+                  boxWidth: 8,
+                  padding: 16,
+                  color: '#374151',
+                  font: { family: 'Inter, system-ui, sans-serif', size: 12 },
+                },
+              },
+              tooltip: {
+                backgroundColor: '#111827',
+                titleColor: '#F9FAFB',
+                bodyColor: '#F3F4F6',
+                padding: 10,
+                cornerRadius: 8,
+                callbacks: {
+                  label: (ctx) => `${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)}`,
+                },
+              },
+            },
+            scales: {
+              x: {
+                grid: { display: false },
+                ticks: {
+                  maxTicksLimit: 8,
+                  color: '#6B7280',
+                  font: { family: 'Inter, system-ui, sans-serif', size: 11 },
+                },
+              },
+              y: {
+                beginAtZero: true,
+                border: { display: false },
+                grid: { color: '#F3F4F6' },
+                ticks: {
+                  color: '#6B7280',
+                  font: { family: 'Inter, system-ui, sans-serif', size: 11 },
+                  callback: (val) => new Intl.NumberFormat('da-DK', { maximumFractionDigits: 0 }).format(val) + ' kr.',
+                },
+              },
+            },
+          },
+        });
+      }
+
+      function getPhaseBadgeHtml(phase) {
+        if (phase === 'disbursing') {
+          return '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A]">Under udbetaling</span>';
+        }
+        if (phase === 'grace') {
+          return '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#F1F5F9] text-[#475569] border border-[#CBD5E1]">Afdragsfri</span>';
+        }
+        if (phase === 'paid') {
+          return '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#ECFDF5] text-[#065F46] border border-[#A7F3D0]">Indfriet</span>';
+        }
+        return '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#ECFDF5] text-[#065F46] border border-[#A7F3D0]">Afdrager</span>';
+      }
+
+      function renderLoansGrid(baseMonthIdx) {
+        el.loanCountBadge.textContent = String(state.loans.length);
+        el.loadSampleBtn.classList.toggle('hidden', state.loans.length > 0);
+        el.emptyLoansState.classList.toggle('hidden', state.loans.length > 0);
+        el.loansGrid.classList.toggle('hidden', state.loans.length === 0);
+
+        if (state.loans.length === 0) {
+          el.loansGrid.innerHTML = '';
+          return;
+        }
+
+        const cardsHtml = state.loans.map((loan) => {
+          const sim = simulateSingleLoan(loan, baseMonthIdx);
+          const phase = getLoanPhaseAtMonth(loan, baseMonthIdx);
+          const typeLabel = loan.type === 'su' ? 'Løbende SU-lån' : 'Privat lån';
+
+          let rateText = '';
+          let flowLabel = 'Månedlig bevægelse';
+          let flowValue = '';
+          let milestoneLabel = '';
+          let milestoneValue = '';
+
+          if (loan.type === 'su') {
+            if (phase === 'disbursing') {
+              rateText = `${formatPercent(loan.studyRate)} p.a. (→ ${formatPercent(loan.repaymentRate)})`;
+              flowLabel = 'Udbetaling';
+              flowValue = `+${formatCurrency(loan.monthlyDisbursement)}/md.`;
+              milestoneLabel = 'Afdrag starter';
+              milestoneValue = formatMonthShortDa(ymToIndex(loan.repaymentStartMonth));
+            } else if (phase === 'grace') {
+              rateText = `${formatPercent(loan.repaymentRate)} p.a.`;
+              flowLabel = 'Afdrag (pause)';
+              flowValue = '0 kr./md.';
+              milestoneLabel = 'Afdrag starter';
+              milestoneValue = formatMonthShortDa(ymToIndex(loan.repaymentStartMonth));
+            } else {
+              rateText = `${formatPercent(loan.repaymentRate)} p.a.`;
+              flowLabel = 'Ydelse';
+              flowValue = `\u2212${formatCurrency(loan.monthlyPayment)}/md.`;
+              milestoneLabel = 'Uddannelse slut';
+              milestoneValue = formatMonthShortDa(ymToIndex(loan.disbursementEndMonth));
+            }
+          } else {
+            rateText = `${formatPercent(loan.annualRate)} p.a.`;
+            const interval = loan.paymentIntervalMonths || 1;
+            flowLabel = interval === 1 ? 'Ydelse' : `Ydelse (hver ${interval}. md.)`;
+            flowValue = `\u2212${formatCurrency(loan.monthlyPayment)}`;
+            milestoneLabel = phase === 'grace' ? 'Afdrag starter' : 'Startet';
+            milestoneValue = formatMonthShortDa(ymToIndex(loan.startMonth));
+          }
+
+          let payoffText = '—';
+          if ((loan.balance || 0) <= 0.005) {
+            payoffText = 'Indfriet';
+          } else if (sim.cappedAt30Years) {
+            payoffText = '> 30 år (øg ydelse)';
+          } else {
+            payoffText = `${formatMonthShortDa(sim.payoffMonthIdx)} (${sim.payoffMonths} mdr.)`;
+          }
+
+          const pctDisplay = `${Math.round(sim.paidPercent)}%`;
+          let progressRightNote = pctDisplay;
+          if (loan.type === 'su' && (phase === 'disbursing' || phase === 'grace')) {
+            progressRightNote = `${pctDisplay} · top ${formatCurrency(sim.referencePeak)}`;
+          } else if (loan.type === 'private') {
+            progressRightNote = `${pctDisplay} af ${formatCurrency(sim.referencePeak)}`;
+          }
+
+          return `
+            <article class="bg-white border border-[#E5E7EB] rounded-xl p-5 flex flex-col justify-between space-y-4">
+              <div class="space-y-4">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <h3 class="text-base font-semibold text-[#111827] truncate">${escapeHtml(loan.name)}</h3>
+                    <span class="inline-block mt-1 text-xs font-medium text-[#6B7280]">${typeLabel}</span>
+                  </div>
+                  ${getPhaseBadgeHtml(phase)}
+                </div>
+
+                <div>
+                  <div class="text-xs text-[#6B7280]">Nuværende saldo</div>
+                  <div class="mt-0.5 text-2xl sm:text-3xl font-semibold text-[#111827] tabular-nums">${formatCurrency(loan.balance)}</div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs pt-1">
+                  <div>
+                    <div class="text-[#6B7280]">Rente</div>
+                    <div class="mt-0.5 font-medium text-[#111827] tabular-nums">${rateText}</div>
+                  </div>
+                  <div>
+                    <div class="text-[#6B7280]">${flowLabel}</div>
+                    <div class="mt-0.5 font-medium text-[#111827] tabular-nums">${flowValue}</div>
+                  </div>
+                  <div>
+                    <div class="text-[#6B7280]">${milestoneLabel}</div>
+                    <div class="mt-0.5 font-medium text-[#111827] tabular-nums">${milestoneValue}</div>
+                  </div>
+                  <div>
+                    <div class="text-[#6B7280]">Forventet indfrielse</div>
+                    <div class="mt-0.5 font-medium ${sim.cappedAt30Years ? 'text-[#B45309]' : 'text-[#111827]'} tabular-nums">${payoffText}</div>
+                  </div>
+                </div>
+
+                <div class="space-y-1.5 pt-1">
+                  <div class="flex items-center justify-between text-xs">
+                    <span class="text-[#6B7280]">Afbetalt</span>
+                    <span class="font-medium text-[#111827] tabular-nums">${progressRightNote}</span>
+                  </div>
+                  <div class="w-full h-2 bg-[#F3F4F6] rounded-full overflow-hidden">
+                    <div class="h-full bg-[#059669] rounded-full transition-all duration-300" style="width: ${sim.paidPercent.toFixed(1)}%"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="pt-3 border-t border-[#F3F4F6] flex items-center gap-2">
+                <button type="button" data-action="pay" data-loan-id="${escapeHtml(loan.id)}" ${(loan.balance || 0) <= 0.005 ? 'disabled' : ''} class="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition ${
+                  (loan.balance || 0) <= 0.005
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-[#ECFDF5] hover:bg-[#D1FAE5] text-[#065F46]'
+                }">
+                  <i data-lucide="banknote" class="w-3.5 h-3.5"></i>
+                  <span>Registrer ekstra afdrag</span>
+                </button>
+                <button type="button" data-action="edit" data-loan-id="${escapeHtml(loan.id)}" class="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-[#E5E7EB] bg-white hover:bg-gray-50 text-xs font-medium text-[#374151] transition">
+                  <i data-lucide="pencil" class="w-3.5 h-3.5 text-[#6B7280]"></i>
+                  <span>Rediger</span>
+                </button>
+              </div>
+            </article>
+          `;
+        }).join('');
+
+        el.loansGrid.innerHTML = cardsHtml;
+      }
+
+      function renderTransactions() {
+        const totalExtra = state.transactions.reduce((sum, tx) => sum + (tx.amount || 0), 0);
+        el.totalExtraPaidBadge.textContent = formatCurrency(totalExtra);
+
+        if (state.transactions.length === 0) {
+          el.transactionEmptyState.classList.remove('hidden');
+          el.transactionTableWrapper.classList.add('hidden');
+          el.transactionListBody.innerHTML = '';
+          return;
+        }
+
+        el.transactionEmptyState.classList.add('hidden');
+        el.transactionTableWrapper.classList.remove('hidden');
+
+        const sorted = [...state.transactions].reverse().sort((a, b) => b.date.localeCompare(a.date));
+        el.transactionListBody.innerHTML = sorted
+          .map((tx) => {
+            const loan = state.loans.find((l) => l.id === tx.loanId);
+            const displayLoanName = loan ? loan.name : tx.loanName;
+            return `
+              <tr class="hover:bg-[#F9FAFB]">
+                <td class="py-3 pr-4 text-[#6B7280] tabular-nums whitespace-nowrap">${escapeHtml(formatShortDateDa(tx.date))}</td>
+                <td class="py-3 pr-4 font-medium text-[#111827]">${escapeHtml(displayLoanName)}</td>
+                <td class="py-3 pr-4 text-[#6B7280]">${tx.note ? escapeHtml(tx.note) : '<span class="text-gray-300">—</span>'}</td>
+                <td class="py-3 pr-4 text-right font-semibold text-[#065F46] tabular-nums whitespace-nowrap">\u2212${formatCurrency(tx.amount)}</td>
+                <td class="py-3 text-right whitespace-nowrap">
+                  <button type="button" data-action="undo-tx" data-tx-id="${escapeHtml(tx.id)}" class="text-xs font-medium text-[#6B7280] hover:text-red-600 transition" title="Fortryd indbetaling og læg beløb tilbage til saldo">
+                    Fortryd
+                  </button>
+                </td>
+              </tr>
+            `;
+          })
+          .join('');
+      }
+
+      // ---------- Lån Modal (Opret / Rediger) ----------
+
+      function setLoanModalType(type) {
+        uiState.loanModalType = type === 'private' ? 'private' : 'su';
+        const isSu = uiState.loanModalType === 'su';
+
+        el.typeSuBtn.className = isSu
+          ? 'py-2 px-3 rounded-lg text-sm font-medium transition bg-white text-[#111827] shadow-sm'
+          : 'py-2 px-3 rounded-lg text-sm font-medium transition text-[#6B7280] hover:text-[#111827]';
+        el.typePrivateBtn.className = !isSu
+          ? 'py-2 px-3 rounded-lg text-sm font-medium transition bg-white text-[#111827] shadow-sm'
+          : 'py-2 px-3 rounded-lg text-sm font-medium transition text-[#6B7280] hover:text-[#111827]';
+
+        el.suFields.classList.toggle('hidden', !isSu);
+        el.privateFields.classList.toggle('hidden', isSu);
+        updateModalPreviews();
+      }
+
+      function updateModalPreviews() {
+        if (uiState.loanModalType === 'su') {
+          const baseIdx = currentMonthIndex();
+          const endIdx = ymToIndex(el.suDisbursementEndInput.value);
+          const repayIdx = ymToIndex(el.suRepayStartInput.value);
+
+          if (endIdx !== null && repayIdx !== null) {
+            const gap = Math.max(0, repayIdx - endIdx - 1);
+            el.suGraceInfo.textContent = gap === 0 ? 'Ingen afdragsfri pause' : `${gap} ${gap === 1 ? 'md.' : 'mdr.'} afdragsfri pause`;
+          } else {
+            el.suGraceInfo.textContent = '';
+          }
+
+          const draftSu = {
+            type: 'su',
+            balance: Math.max(0, Number(el.suBalanceInput.value) || 0),
+            monthlyDisbursement: Math.max(0, Number(el.suDisbursementInput.value) || 0),
+            disbursementEndMonth: el.suDisbursementEndInput.value || indexToYm(baseIdx),
+            studyRate: Math.max(0, Number(el.suStudyRateInput.value) || 0),
+            repaymentStartMonth: el.suRepayStartInput.value || indexToYm(baseIdx + 1),
+            repaymentRate: Math.max(0, Number(el.suRepayRateInput.value) || 0),
+            monthlyPayment: Math.max(0, Number(el.suPaymentInput.value) || 0),
+          };
+
+          const milestones = computeSuMilestones(draftSu, baseIdx);
+          const repayStartBal = milestones.projectedRepaymentStartBalance;
+          const minPmt = calculateAnnuityPayment(repayStartBal, draftSu.repaymentRate, uiState.suHelperYears);
+
+          el.suMinPaymentSummary.innerHTML = `Forventet saldo ved afdragsstart: <strong class="text-[#111827]">${formatCurrency(repayStartBal)}</strong> · Anbefalet ydelse (${uiState.suHelperYears} år): <strong class="text-[#065F46]">${formatCurrency(minPmt)}/md.</strong>`;
+          el.applySuMinPaymentBtn.dataset.recommendedPayment = String(minPmt);
+
+          const monthlyInterestAtRepay = repayStartBal * (draftSu.repaymentRate / 100 / 12);
+          if (draftSu.monthlyPayment > 0 && draftSu.monthlyPayment <= monthlyInterestAtRepay && repayStartBal > 0) {
+            el.suInterestWarning.textContent = `Bemærk: Ydelsen (${formatCurrency(draftSu.monthlyPayment)}) er lavere end den månedlige rente ved afdragsstart (${formatCurrency(monthlyInterestAtRepay)}). Gælden vil ikke falde.`;
+            el.suInterestWarning.classList.remove('hidden');
+          } else {
+            el.suInterestWarning.classList.add('hidden');
+          }
+        } else {
+          const isCustom = el.privFrequencySelect.value === 'custom';
+          el.privCustomIntervalWrap.classList.toggle('hidden', !isCustom);
+          const interval = isCustom
+            ? Math.max(1, Math.round(Number(el.privCustomIntervalInput.value) || 1))
+            : Number(el.privFrequencySelect.value) || 1;
+          el.privPaymentLabel.textContent = interval === 1 ? 'Månedlig ydelse (kr./md.)' : `Ydelse pr. betaling (hver ${interval}. md., kr.)`;
+
+          const draftPriv = {
+            type: 'private',
+            originalPrincipal: Math.max(0, Number(el.privPrincipalInput.value) || 0),
+            balance: Math.max(0, Number(el.privBalanceInput.value) || 0),
+            annualRate: Math.max(0, Number(el.privRateInput.value) || 0),
+            startMonth: el.privStartInput.value || indexToYm(currentMonthIndex()),
+            paymentIntervalMonths: interval,
+            monthlyPayment: Math.max(0, Number(el.privPaymentInput.value) || 0),
+          };
+          const sim = simulateSingleLoan(draftPriv, currentMonthIndex());
+          if (draftPriv.balance <= 0) {
+            el.privPayoffPreview.textContent = 'Restgæld er 0 kr.';
+          } else if (sim.cappedAt30Years) {
+            el.privPayoffPreview.textContent = 'Indfries ikke inden for 30 år med denne ydelse.';
+          } else {
+            el.privPayoffPreview.textContent = `Forventet indfrielse: ${formatMonthShortDa(sim.payoffMonthIdx)} (${formatDurationDa(sim.payoffMonths)}) · Samlede renter: ${formatCurrency(sim.totalInterest)}`;
+          }
+        }
+      }
+
+      function openLoanModal(loanId = null) {
+        if (syncState.status !== 'ready') return;
+        el.loanFormError.classList.add('hidden');
+        uiState.pendingDeleteLoanId = null;
+        el.confirmDeleteLoanBtn.classList.add('hidden');
+        el.loanFormSubmitBtn.disabled = false;
+        el.loanFormSubmitBtn.textContent = 'Gem lån';
+        el.confirmDeleteLoanBtn.disabled = false;
+
+        const baseIdx = currentMonthIndex();
+
+        if (loanId) {
+          const loan = state.loans.find((l) => l.id === loanId);
+          if (!loan) return;
+          el.loanModalTitle.textContent = 'Rediger lån';
+          el.loanIdField.value = loan.id;
+          el.loanNameInput.value = loan.name;
+          el.deleteLoanBtn.classList.remove('hidden');
+
+          if (loan.type === 'su') {
+            el.suBalanceInput.value = loan.balance;
+            el.suDisbursementInput.value = loan.monthlyDisbursement;
+            el.suDisbursementEndInput.value = loan.disbursementEndMonth;
+            el.suStudyRateInput.value = loan.studyRate;
+            el.suRepayStartInput.value = loan.repaymentStartMonth;
+            el.suRepayRateInput.value = loan.repaymentRate;
+            el.suPaymentInput.value = loan.monthlyPayment;
+            el.suPeakBalanceInput.value = loan.peakBalance > loan.balance ? loan.peakBalance : '';
+            setLoanModalType('su');
+          } else {
+            el.privPrincipalInput.value = loan.originalPrincipal;
+            el.privBalanceInput.value = loan.balance;
+            el.privRateInput.value = loan.annualRate;
+            el.privStartInput.value = loan.startMonth;
+            const interval = loan.paymentIntervalMonths || 1;
+            if ([1, 3, 6, 12].includes(interval)) {
+              el.privFrequencySelect.value = String(interval);
+            } else {
+              el.privFrequencySelect.value = 'custom';
+              el.privCustomIntervalInput.value = interval;
+            }
+            el.privPaymentInput.value = loan.monthlyPayment;
+            setLoanModalType('private');
+          }
+        } else {
+          el.loanModalTitle.textContent = 'Tilføj nyt lån';
+          el.loanIdField.value = '';
+          el.loanNameInput.value = '';
+          el.deleteLoanBtn.classList.add('hidden');
+
+          el.suBalanceInput.value = '50000';
+          el.suDisbursementInput.value = '3622';
+          el.suDisbursementEndInput.value = indexToYm(baseIdx + 12);
+          el.suStudyRateInput.value = '4.0';
+          el.suRepayStartInput.value = indexToYm(baseIdx + 30);
+          el.suRepayRateInput.value = '3.5';
+          el.suPaymentInput.value = '1500';
+          el.suPeakBalanceInput.value = '';
+
+          el.privPrincipalInput.value = '40000';
+          el.privBalanceInput.value = '40000';
+          el.privRateInput.value = '0';
+          el.privStartInput.value = indexToYm(baseIdx);
+          el.privFrequencySelect.value = '1';
+          el.privCustomIntervalInput.value = '2';
+          el.privPaymentInput.value = '1500';
+
+          setLoanModalType('su');
+        }
+
+        el.loanModal.classList.remove('hidden');
+        el.loanNameInput.focus();
+      }
+
+      function closeLoanModal() {
+        el.loanModal.classList.add('hidden');
+        uiState.pendingDeleteLoanId = null;
+      }
+
+      async function handleLoanFormSubmit(e) {
+        e.preventDefault();
+        el.loanFormError.classList.add('hidden');
+
+        const showFormError = (msg) => {
+          el.loanFormError.textContent = msg;
+          el.loanFormError.classList.remove('hidden');
+        };
+
+        const name = el.loanNameInput.value.trim();
+        if (!name) return showFormError('Angiv et navn til lånet.');
+
+        const existingId = el.loanIdField.value.trim();
+        let newLoan;
+
+        if (uiState.loanModalType === 'su') {
+          const balance = Number(el.suBalanceInput.value);
+          const monthlyDisbursement = Number(el.suDisbursementInput.value);
+          const studyRate = Number(el.suStudyRateInput.value);
+          const repaymentRate = Number(el.suRepayRateInput.value);
+          const monthlyPayment = Number(el.suPaymentInput.value);
+          const disbursementEndMonth = el.suDisbursementEndInput.value.trim();
+          const repaymentStartMonth = el.suRepayStartInput.value.trim();
+          const peakRaw = el.suPeakBalanceInput.value.trim();
+          const peakInput = peakRaw === '' ? 0 : Number(peakRaw);
+
+          if (![balance, monthlyDisbursement, studyRate, repaymentRate, monthlyPayment, peakInput].every((n) => Number.isFinite(n) && n >= 0)) {
+            return showFormError('Alle beløb og renter skal være gyldige tal på 0 eller derover.');
+          }
+          const endIdx = ymToIndex(disbursementEndMonth);
+          const repayIdx = ymToIndex(repaymentStartMonth);
+          if (endIdx === null || repayIdx === null) {
+            return showFormError('Angiv gyldige måneder i formatet ÅÅÅÅ-MM.');
+          }
+          if (repayIdx <= endIdx) {
+            return showFormError('Startdato for afdrag skal ligge efter slutdato for udbetaling.');
+          }
+
+          const existingLoan = state.loans.find((l) => l.id === existingId);
+          const existingPeak = existingLoan && existingLoan.type === 'su' ? (existingLoan.peakBalance || 0) : 0;
+
+          newLoan = {
+            id: existingId || generateId('loan'),
+            type: 'su',
+            name,
+            balance,
+            monthlyDisbursement,
+            disbursementEndMonth,
+            studyRate,
+            repaymentStartMonth,
+            repaymentRate,
+            monthlyPayment,
+            peakBalance: peakRaw !== '' ? Math.max(peakInput, balance) : Math.max(existingPeak, balance),
+          };
+        } else {
+          const originalPrincipal = Number(el.privPrincipalInput.value);
+          const balance = Number(el.privBalanceInput.value);
+          const annualRate = Number(el.privRateInput.value);
+          const monthlyPayment = Number(el.privPaymentInput.value);
+          const startMonth = el.privStartInput.value.trim();
+          const interval =
+            el.privFrequencySelect.value === 'custom'
+              ? Math.round(Number(el.privCustomIntervalInput.value))
+              : Number(el.privFrequencySelect.value);
+
+          if (![originalPrincipal, balance, annualRate, monthlyPayment].every((n) => Number.isFinite(n) && n >= 0)) {
+            return showFormError('Alle beløb og renter skal være gyldige tal på 0 eller derover.');
+          }
+          if (!Number.isFinite(interval) || interval < 1 || interval > 36) {
+            return showFormError('Betalingsinterval skal være mellem 1 og 36 måneder.');
+          }
+          if (ymToIndex(startMonth) === null) {
+            return showFormError('Angiv en gyldig startdato i formatet ÅÅÅÅ-MM.');
+          }
+
+          newLoan = {
+            id: existingId || generateId('loan'),
+            type: 'private',
+            name,
+            originalPrincipal: Math.max(originalPrincipal, balance),
+            balance,
+            annualRate,
+            monthlyPayment,
+            startMonth,
+            paymentIntervalMonths: interval,
+          };
+        }
+
+        const nextState = cloneState(state);
+        if (existingId) {
+          const idx = nextState.loans.findIndex((l) => l.id === existingId);
+          if (idx >= 0) nextState.loans[idx] = newLoan;
+          else nextState.loans.push(newLoan);
+        } else {
+          nextState.loans.push(newLoan);
+        }
+        nextState.demoMode = false;
+
+        el.loanFormSubmitBtn.disabled = true;
+        el.loanFormSubmitBtn.textContent = 'Gemmer…';
+        try {
+          await commitStateChange(nextState, { reason: existingId ? 'edit_loan' : 'add_loan' });
+          closeLoanModal();
+          showToast(existingId ? `"${newLoan.name}" blev opdateret` : `"${newLoan.name}" blev tilføjet`);
+        } catch (err) {
+          showFormError(formatFirestoreErrorDa(err));
+        } finally {
+          el.loanFormSubmitBtn.disabled = false;
+          el.loanFormSubmitBtn.textContent = 'Gem lån';
+        }
+      }
+
+      // ---------- Ekstra Afdrag Modal ----------
+
+      function updatePaymentPreview() {
+        const loan = state.loans.find((l) => l.id === el.paymentLoanIdField.value);
+        if (!loan) return;
+        const amount = Math.max(0, Number(el.paymentAmountInput.value) || 0);
+        const nextBal = Math.max(0, (loan.balance || 0) - amount);
+        el.paymentNewBalancePreview.textContent = formatCurrency(nextBal);
+      }
+
+      function openPaymentModal(loanId) {
+        if (syncState.status !== 'ready') return;
+        const loan = state.loans.find((l) => l.id === loanId);
+        if (!loan || (loan.balance || 0) <= 0.005) return;
+
+        el.paymentFormError.classList.add('hidden');
+        el.paymentFormSubmitBtn.disabled = false;
+        el.paymentFormSubmitBtn.textContent = 'Registrer afdrag';
+        el.paymentLoanIdField.value = loan.id;
+        el.paymentModalLoanName.textContent = loan.name;
+        el.paymentCurrentBalance.textContent = formatCurrency(loan.balance);
+        el.paymentAmountInput.value = '';
+        el.paymentAmountInput.max = String(Math.ceil(loan.balance));
+        el.paymentDateInput.value = todayIsoDate();
+        el.paymentNoteInput.value = '';
+        updatePaymentPreview();
+
+        el.paymentModal.classList.remove('hidden');
+        el.paymentAmountInput.focus();
+      }
+
+      function closePaymentModal() {
+        el.paymentModal.classList.add('hidden');
+      }
+
+      async function handlePaymentFormSubmit(e) {
+        e.preventDefault();
+        el.paymentFormError.classList.add('hidden');
+
+        const loanId = el.paymentLoanIdField.value;
+        const currentLoan = state.loans.find((l) => l.id === loanId);
+        if (!currentLoan) return closePaymentModal();
+
+        const rawAmount = Number(el.paymentAmountInput.value);
+        if (!Number.isFinite(rawAmount) || rawAmount <= 0) {
+          el.paymentFormError.textContent = 'Indtast et gyldigt beløb større end 0 kr.';
+          el.paymentFormError.classList.remove('hidden');
+          return;
+        }
+
+        const nextState = cloneState(state);
+        const loan = nextState.loans.find((l) => l.id === loanId);
+        if (!loan) return closePaymentModal();
+
+        const appliedAmount = Math.min(loan.balance, rawAmount);
+        // Bevar evt. registreret peak før afdraget trækkes fra, så % afbetalt afspejler indbetalingen
+        if (loan.type === 'su') {
+          const milestones = computeSuMilestones(loan, currentMonthIndex());
+          loan.peakBalance = Math.max(loan.peakBalance || 0, milestones.referencePeak, loan.balance);
+        }
+
+        loan.balance = Math.max(0, loan.balance - appliedAmount);
+        if (loan.balance <= 0.005) loan.balance = 0;
+
+        nextState.transactions.push({
+          id: generateId('tx'),
+          loanId: loan.id,
+          loanName: loan.name,
+          amount: appliedAmount,
+          date: el.paymentDateInput.value || todayIsoDate(),
+          note: el.paymentNoteInput.value.trim().slice(0, 80),
+        });
+        nextState.demoMode = false;
+
+        el.paymentFormSubmitBtn.disabled = true;
+        el.paymentFormSubmitBtn.textContent = 'Gemmer…';
+        try {
+          await commitStateChange(nextState, { reason: 'extra_payment' });
+          closePaymentModal();
+          showToast(`Ekstra afdrag på ${formatCurrency(appliedAmount)} registreret`);
+        } catch (err) {
+          el.paymentFormError.textContent = formatFirestoreErrorDa(err);
+          el.paymentFormError.classList.remove('hidden');
+        } finally {
+          el.paymentFormSubmitBtn.disabled = false;
+          el.paymentFormSubmitBtn.textContent = 'Registrer afdrag';
+        }
+      }
+
+      // ---------- Import / Eksport JSON ----------
+
+      function handleExportJson() {
+        const payload = {
+          version: 1,
+          app: 'Gældsoverblik',
+          exportedAt: new Date().toISOString(),
+          loans: state.loans,
+          transactions: state.transactions,
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `gaeldsoverblik-backup-${todayIsoDate()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        showToast('Backup eksporteret som JSON');
+      }
+
+      function handleImportFile(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            const parsed = JSON.parse(String(reader.result || ''));
+            if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.loans)) {
+              throw new Error('Ugyldig filstruktur');
+            }
+            const validLoans = parsed.loans.map(sanitizeLoan).filter(Boolean);
+            if (parsed.loans.length > 0 && validLoans.length === 0) {
+              throw new Error('Ingen gyldige lån fundet i filen');
+            }
+            const validTx = Array.isArray(parsed.transactions)
+              ? parsed.transactions.map(sanitizeTransaction).filter(Boolean)
+              : [];
+
+            const nextState = {
+              version: 1,
+              demoMode: false,
+              demoDismissed: true,
+              loans: validLoans,
+              transactions: validTx,
+            };
+
+            const executeImport = async () => {
+              await commitStateChange(nextState, {
+                allowEmptyOverwrite: validLoans.length === 0,
+                reason: 'import_json',
+              });
+              showToast(`Importerede ${validLoans.length} lån til Firestore`);
+            };
+
+            if (state.loans.length > 0) {
+              openConfirmModal({
+                title: 'Erstat nuværende lån med JSON-import?',
+                message: `Du har i øjeblikket ${state.loans.length} lån gemt på din konto. Importen vil erstatte dem med ${validLoans.length} lån fra JSON-filen.`,
+                confirmText: 'Importer og erstat',
+                onConfirm: executeImport,
+              });
+            } else {
+              await executeImport();
+            }
+          } catch (err) {
+            showToast(`Import fejlede: ${err.message ? formatFirestoreErrorDa(err) : 'Ugyldig JSON-fil'}`, true);
+          } finally {
+            el.importFileInput.value = '';
+          }
+        };
+        reader.readAsText(file);
+      }
+
+      // ---------- Auth & Sync Event Listeners ----------
+
+      el.authTabSignIn.addEventListener('click', () => setAuthMode('signin'));
+      el.authTabSignUp.addEventListener('click', () => setAuthMode('signup'));
+
+      el.authForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        el.authErrorBox.classList.add('hidden');
+        el.authInfoBox.classList.add('hidden');
+
+        const email = el.authEmailInput.value.trim();
+        const password = el.authPasswordInput.value;
+        const confirmPassword = el.authPasswordConfirmInput.value;
+
+        const showAuthErr = (msg) => {
+          el.authErrorBox.textContent = msg;
+          el.authErrorBox.classList.remove('hidden');
+        };
+
+        if (!email) return showAuthErr('Indtast din e-mailadresse.');
+        if (password.length < 6) return showAuthErr('Adgangskoden skal være på mindst 6 tegn.');
+        if (uiState.authMode === 'signup' && password !== confirmPassword) {
+          return showAuthErr('Adgangskoderne er ikke ens.');
+        }
+
+        el.authSubmitBtn.disabled = true;
+        el.googleSignInBtn.disabled = true;
+        el.authSubmitBtn.textContent = uiState.authMode === 'signup' ? 'Opretter konto…' : 'Logger ind…';
+
+        try {
+          if (uiState.authMode === 'signup') {
+            await createUserWithEmailAndPassword(auth, email, password);
+          } else {
+            await signInWithEmailAndPassword(auth, email, password);
+          }
+          el.authPasswordInput.value = '';
+          el.authPasswordConfirmInput.value = '';
+        } catch (err) {
+          showAuthErr(formatAuthErrorDa(err));
+        } finally {
+          el.authSubmitBtn.disabled = false;
+          el.googleSignInBtn.disabled = false;
+          el.authSubmitBtn.textContent = uiState.authMode === 'signup' ? 'Opret konto' : 'Log ind';
+        }
+      });
+
+      el.authResetBtn.addEventListener('click', async () => {
+        el.authErrorBox.classList.add('hidden');
+        el.authInfoBox.classList.add('hidden');
+        const email = el.authEmailInput.value.trim();
+        if (!email) {
+          el.authErrorBox.textContent = 'Indtast din e-mailadresse ovenfor først, så vi kan sende et nulstillingslink.';
+          el.authErrorBox.classList.remove('hidden');
+          return;
+        }
+        try {
+          await sendPasswordResetEmail(auth, email);
+          el.authInfoBox.textContent = `Hvis der findes en konto for ${email}, er der sendt et link til nulstilling af adgangskode.`;
+          el.authInfoBox.classList.remove('hidden');
+        } catch (err) {
+          el.authErrorBox.textContent = formatAuthErrorDa(err);
+          el.authErrorBox.classList.remove('hidden');
+        }
+      });
+
+      el.googleSignInBtn.addEventListener('click', async () => {
+        el.authErrorBox.classList.add('hidden');
+        el.authInfoBox.classList.add('hidden');
+        el.authSubmitBtn.disabled = true;
+        el.googleSignInBtn.disabled = true;
+        try {
+          const provider = new GoogleAuthProvider();
+          await signInWithPopup(auth, provider);
+        } catch (err) {
+          el.authErrorBox.textContent = formatAuthErrorDa(err);
+          el.authErrorBox.classList.remove('hidden');
+        } finally {
+          el.authSubmitBtn.disabled = false;
+          el.googleSignInBtn.disabled = false;
+        }
+      });
+
+      const handleSignOut = async () => {
+        try {
+          await signOut(auth);
+        } catch (err) {
+          showToast(formatAuthErrorDa(err), true);
+        }
+      };
+
+      el.signOutBtn.addEventListener('click', handleSignOut);
+      el.syncCancelSignOutBtn.addEventListener('click', handleSignOut);
+      el.syncErrorSignOutBtn.addEventListener('click', handleSignOut);
+
+      el.retrySyncBtn.addEventListener('click', () => {
+        if (auth.currentUser) {
+          syncState.authGeneration += 1;
+          loadUserStateFromServer(auth.currentUser);
+        }
+      });
+
+      el.refreshServerBtn.addEventListener('click', () => {
+        if (auth.currentUser && !syncState.isSaving) {
+          syncState.authGeneration += 1;
+          loadUserStateFromServer(auth.currentUser);
+        }
+      });
+
+      el.resolveConflictBtn.addEventListener('click', () => {
+        if (auth.currentUser && !syncState.isSaving) {
+          syncState.authGeneration += 1;
+          loadUserStateFromServer(auth.currentUser);
+        }
+      });
+
+      el.importLegacyBtn.addEventListener('click', async () => {
+        if (!syncState.legacyCandidate) return;
+        el.importLegacyBtn.disabled = true;
+        try {
+          await commitStateChange(syncState.legacyCandidate, { reason: 'migrate_local' });
+          syncState.legacyCandidate = null;
+          try {
+            localStorage.removeItem(LEGACY_STORAGE_KEY);
+          } catch {}
+          renderApp();
+          showToast('Lokale lån overført til Firestore');
+        } catch (err) {
+          showToast(formatFirestoreErrorDa(err), true);
+        } finally {
+          el.importLegacyBtn.disabled = false;
+        }
+      });
+
+      el.dismissLegacyBtn.addEventListener('click', () => {
+        syncState.legacyDismissed = true;
+        syncState.legacyCandidate = null;
+        renderApp();
+      });
+
+      // ---------- App Event Listeners ----------
+
+      el.openAddLoanBtn.addEventListener('click', () => openLoanModal(null));
+      el.emptyAddLoanBtn.addEventListener('click', () => openLoanModal(null));
+
+      const loadSampleAction = async () => {
+        if (state.loans.length > 0 || state.transactions.length > 0) {
+          showToast('Eksempeldata kan kun indlæses, når der ikke findes lån på kontoen', true);
+          return;
+        }
+        try {
+          await commitStateChange(createSampleState(), { reason: 'load_sample' });
+          showToast('Eksempeldata indlæst og gemt');
+        } catch (err) {
+          showToast(formatFirestoreErrorDa(err), true);
+        }
+      };
+      el.loadSampleBtn.addEventListener('click', loadSampleAction);
+      el.emptySampleBtn.addEventListener('click', loadSampleAction);
+
+      el.clearAllDataBtn.addEventListener('click', () => {
+        const executeClear = async () => {
+          await commitStateChange(createEmptyState(), {
+            allowEmptyOverwrite: true,
+            reason: 'clear_all',
+          });
+          showToast('Alle lån ryddet');
+        };
+
+        if (!state.demoMode && state.loans.length > 0) {
+          openConfirmModal({
+            title: 'Ryd alle lån?',
+            message: `Er du sikker på, at du vil slette alle ${state.loans.length} lån og tilhørende historik?`,
+            confirmText: 'Ryd alle lån',
+            onConfirm: executeClear,
+          });
+        } else {
+          executeClear().catch((err) => showToast(formatFirestoreErrorDa(err), true));
+        }
+      });
+
+      el.dismissDemoBtn.addEventListener('click', async () => {
+        const nextState = cloneState(state);
+        nextState.demoDismissed = true;
+        try {
+          await commitStateChange(nextState, { reason: 'dismiss_demo' });
+        } catch (err) {
+          showToast(formatFirestoreErrorDa(err), true);
+        }
+      });
+
+      el.exportJsonBtn.addEventListener('click', handleExportJson);
+      el.importJsonBtn.addEventListener('click', () => el.importFileInput.click());
+      el.importFileInput.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (file) handleImportFile(file);
+      });
+
+      // Confirm Modal controls
+      el.confirmModalCancelBtn.addEventListener('click', closeConfirmModal);
+      el.confirmModal.addEventListener('click', (e) => {
+        if (e.target === el.confirmModal) closeConfirmModal();
+      });
+      el.confirmModalConfirmBtn.addEventListener('click', async () => {
+        const action = uiState.pendingConfirmAction;
+        if (!action) return closeConfirmModal();
+        el.confirmModalConfirmBtn.disabled = true;
+        try {
+          await action();
+          closeConfirmModal();
+        } catch (err) {
+          closeConfirmModal();
+          showToast(formatFirestoreErrorDa(err), true);
+        } finally {
+          el.confirmModalConfirmBtn.disabled = false;
+        }
+      });
+
+      // Chart toggles
+      el.chartModeTotalBtn.addEventListener('click', () => {
+        uiState.chartMode = 'total';
+        renderApp();
+      });
+      el.chartModeLoansBtn.addEventListener('click', () => {
+        uiState.chartMode = 'loans';
+        renderApp();
+      });
+
+      // Simulator controls
+      function syncMonthlySim(val) {
+        const clamped = clamp(Math.round(Number(val) || 0), 0, 50000);
+        uiState.simExtraMonthly = clamped;
+        el.simExtraMonthlyInput.value = clamped;
+        el.simExtraMonthlyRange.value = Math.min(clamped, 10000);
+        renderApp();
+      }
+
+      function syncLumpSim(val) {
+        const clamped = clamp(Math.round(Number(val) || 0), 0, 1000000);
+        uiState.simLumpSum = clamped;
+        el.simLumpSumInput.value = clamped;
+        el.simLumpSumRange.value = Math.min(clamped, 50000);
+        renderApp();
+      }
+
+      el.simExtraMonthlyRange.addEventListener('input', (e) => syncMonthlySim(e.target.value));
+      el.simExtraMonthlyInput.addEventListener('input', (e) => syncMonthlySim(e.target.value));
+      el.simLumpSumRange.addEventListener('input', (e) => syncLumpSim(e.target.value));
+      el.simLumpSumInput.addEventListener('input', (e) => syncLumpSim(e.target.value));
+
+      document.querySelectorAll('.sim-chip-monthly').forEach((btn) => {
+        btn.addEventListener('click', () => syncMonthlySim(btn.dataset.simMonthly));
+      });
+      document.querySelectorAll('.sim-chip-lump').forEach((btn) => {
+        btn.addEventListener('click', () => syncLumpSim(btn.dataset.simLump));
+      });
+
+      el.strategyAvalancheBtn.addEventListener('click', () => {
+        uiState.simStrategy = 'avalanche';
+        renderApp();
+      });
+      el.strategySnowballBtn.addEventListener('click', () => {
+        uiState.simStrategy = 'snowball';
+        renderApp();
+      });
+
+      el.resetSimBtn.addEventListener('click', () => {
+        uiState.simExtraMonthly = 0;
+        uiState.simLumpSum = 0;
+        el.simExtraMonthlyInput.value = 0;
+        el.simExtraMonthlyRange.value = 0;
+        el.simLumpSumInput.value = 0;
+        el.simLumpSumRange.value = 0;
+        renderApp();
+      });
+
+      // Loan Cards delegation
+      el.loansGrid.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-action]');
+        if (!btn) return;
+        const loanId = btn.dataset.loanId;
+        if (btn.dataset.action === 'edit') openLoanModal(loanId);
+        if (btn.dataset.action === 'pay') openPaymentModal(loanId);
+      });
+
+      // Transaction Undo delegation
+      el.transactionListBody.addEventListener('click', async (e) => {
+        const btn = e.target.closest('button[data-action="undo-tx"]');
+        if (!btn) return;
+        const txId = btn.dataset.txId;
+        const nextState = cloneState(state);
+        const txIdx = nextState.transactions.findIndex((t) => t.id === txId);
+        if (txIdx < 0) return;
+
+        const tx = nextState.transactions[txIdx];
+        const loan = nextState.loans.find((l) => l.id === tx.loanId);
+        if (loan) {
+          loan.balance = (loan.balance || 0) + tx.amount;
+        }
+        nextState.transactions.splice(txIdx, 1);
+
+        try {
+          await commitStateChange(nextState, { reason: 'undo_tx' });
+          showToast('Ekstra afdrag fortrudt');
+        } catch (err) {
+          showToast(formatFirestoreErrorDa(err), true);
+        }
+      });
+
+      // Loan Modal controls
+      el.closeLoanModalBtn.addEventListener('click', closeLoanModal);
+      el.cancelLoanModalBtn.addEventListener('click', closeLoanModal);
+      el.loanModal.addEventListener('click', (e) => {
+        if (e.target === el.loanModal) closeLoanModal();
+      });
+      el.typeSuBtn.addEventListener('click', () => setLoanModalType('su'));
+      el.typePrivateBtn.addEventListener('click', () => setLoanModalType('private'));
+      el.loanForm.addEventListener('submit', handleLoanFormSubmit);
+
+      [
+        el.suBalanceInput,
+        el.suDisbursementInput,
+        el.suDisbursementEndInput,
+        el.suStudyRateInput,
+        el.suRepayStartInput,
+        el.suRepayRateInput,
+        el.suPaymentInput,
+        el.privPrincipalInput,
+        el.privBalanceInput,
+        el.privRateInput,
+        el.privStartInput,
+        el.privFrequencySelect,
+        el.privCustomIntervalInput,
+        el.privPaymentInput,
+      ].forEach((input) => {
+        input.addEventListener('input', updateModalPreviews);
+        input.addEventListener('change', updateModalPreviews);
+      });
+
+      document.querySelectorAll('.su-year-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          uiState.suHelperYears = Number(btn.dataset.suYears) || 10;
+          document.querySelectorAll('.su-year-btn').forEach((b) => {
+            const active = b === btn;
+            b.className = active
+              ? 'su-year-btn px-2 py-1 text-xs rounded border border-[#065F46] bg-[#ECFDF5] text-[#065F46] font-medium tabular-nums'
+              : 'su-year-btn px-2 py-1 text-xs rounded border border-[#E5E7EB] text-[#6B7280] hover:bg-gray-50 tabular-nums';
+          });
+          updateModalPreviews();
+        });
+      });
+
+      el.applySuMinPaymentBtn.addEventListener('click', () => {
+        const rec = el.applySuMinPaymentBtn.dataset.recommendedPayment;
+        if (rec) {
+          el.suPaymentInput.value = rec;
+          updateModalPreviews();
+        }
+      });
+
+      el.deleteLoanBtn.addEventListener('click', () => {
+        uiState.pendingDeleteLoanId = el.loanIdField.value;
+        el.deleteLoanBtn.classList.add('hidden');
+        el.confirmDeleteLoanBtn.classList.remove('hidden');
+      });
+
+      el.confirmDeleteLoanBtn.addEventListener('click', async () => {
+        const idToDelete = uiState.pendingDeleteLoanId;
+        if (!idToDelete) return;
+        const removed = state.loans.find((l) => l.id === idToDelete);
+        const nextState = cloneState(state);
+        nextState.loans = nextState.loans.filter((l) => l.id !== idToDelete);
+        nextState.demoMode = false;
+
+        el.confirmDeleteLoanBtn.disabled = true;
+        try {
+          await commitStateChange(nextState, {
+            allowEmptyOverwrite: nextState.loans.length === 0,
+            reason: 'delete_loan',
+          });
+          closeLoanModal();
+          showToast(removed ? `"${removed.name}" slettet` : 'Lån slettet');
+        } catch (err) {
+          el.loanFormError.textContent = formatFirestoreErrorDa(err);
+          el.loanFormError.classList.remove('hidden');
+        } finally {
+          el.confirmDeleteLoanBtn.disabled = false;
+        }
+      });
+
+      // Payment Modal controls
+      el.closePaymentModalBtn.addEventListener('click', closePaymentModal);
+      el.cancelPaymentModalBtn.addEventListener('click', closePaymentModal);
+      el.paymentModal.addEventListener('click', (e) => {
+        if (e.target === el.paymentModal) closePaymentModal();
+      });
+      el.paymentAmountInput.addEventListener('input', updatePaymentPreview);
+      document.querySelectorAll('.quick-pay-chip').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          el.paymentAmountInput.value = btn.dataset.quickPay;
+          updatePaymentPreview();
+        });
+      });
+      el.quickPayAllBtn.addEventListener('click', () => {
+        const loan = state.loans.find((l) => l.id === el.paymentLoanIdField.value);
+        if (loan) {
+          el.paymentAmountInput.value = Math.ceil(loan.balance);
+          updatePaymentPreview();
+        }
+      });
+      el.paymentForm.addEventListener('submit', handlePaymentFormSubmit);
+
+      // Escape closes open modals
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          if (!el.confirmModal.classList.contains('hidden')) closeConfirmModal();
+          if (!el.loanModal.classList.contains('hidden')) closeLoanModal();
+          if (!el.paymentModal.classList.contains('hidden')) closePaymentModal();
+        }
+      });
+
+      // Test hook til headless verifikation
+      window.__GAELDSOVERBLIK__ = {
+        ymToIndex,
+        indexToYm,
+        stepLoanMonth,
+        computeSuMilestones,
+        calculateAnnuityPayment,
+        simulateSingleLoan,
+        simulatePortfolio,
+        sanitizeLoan,
+        sanitizeTransaction,
+        formatCurrency,
+        parseServerDocumentData,
+        validateTransactionWrite,
+      };
+
+      // ---------- Initialisering: Lyt på Firebase Auth ----------
+
+      showAuthGate(true);
+      onAuthStateChanged(auth, (user) => {
+        syncState.authGeneration += 1;
+        if (!user) {
+          resetRuntimeSession();
+          showAuthGate(false);
+          return;
+        }
+        loadUserStateFromServer(user);
+      });
+  </script>
+</body>
+</html>
